@@ -5,10 +5,11 @@
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from ansible.module_utils.basic import AnsibleModule
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 import os
 from os import path as osp
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from copy import deepcopy
 
 MODULE_ARGS = {
     "base_dir": {
@@ -173,17 +174,23 @@ message:
 class Tree():
     """A class representing a filesystem directory tree.
     This tree may or may not actually exist on the filesystem.
-    Symlinks are treated like files.
     """
     path: str
     children: List["Tree"]
     is_dir: bool
     depth: Optional[int]
+    props: Dict = field(default_factory=dict, init=False)
+
+    def __str__(self):
+        return self.path
+
+    def __fspath__(self):
+        return self.path
 
     @staticmethod
     def from_path(path: str, depth: Optional[int] = None) -> "Tree":
         """Creates a tree recursively from an existing path.
-        Does not recurse into symlinks to directories.
+        Symlinks are treated like files and are not recursed into.
         """
         assert depth is None or depth >= 0
         assert osp.isabs(path)
@@ -191,7 +198,6 @@ class Tree():
 
         is_dir = osp.isdir(path) and not osp.islink(path)
 
-        children = []
         if is_dir and depth != 0:
             child_depth = None if depth is None else depth - 1
             children = [
@@ -199,8 +205,9 @@ class Tree():
                 for child
                 in map(lambda p: osp.join(path, p), os.listdir(path))
             ]
-
-        elif not osp.isdir(path) and not osp.isfile(path):
+        elif osp.isdir(path) or osp.isfile(path):
+            children = []
+        else:
             raise Exception("Path exists, but is neither file nor directory?!")
 
         return Tree(
@@ -211,11 +218,11 @@ class Tree():
         )
 
     @property
-    def name(self):
+    def name(self) -> str:
         return osp.basename(self.name)
 
     @property
-    def files(self):
+    def files(self) -> List[str]:
         if self.is_dir:
             files = []
             for child in self.children:
@@ -224,27 +231,56 @@ class Tree():
         else:
             return [self.path]
 
-    def apply(self, func):
+    def apply(self, func: Callable):
         """Applies a function to this tree and all its children recursively.
+        Discards return value of func.
         """
         func(self)
         for child in self.children:
             child.apply(func)
 
-    def map(self, func):
-        """Like apply, but captures the function output in recursive list.
+    def map(self, func: Callable, flatten: bool = False) -> List:
+        """Like apply, but captures the function output in a list.
+        The list structure will be recursive if flatten is False.
         """
-        return [func(self), [child.map(func) for child in self.children]]
+        result = func(self)
+        children = [child.map(func, flatten) for child in self.children]
+        if flatten or not self.is_dir:
+            return [result] + children
+        else:
+            return [result, children]
 
-    def all(self, func):
+    def all(self, func: Callable) -> bool:
         """True, if func returns true for this tree and all of its children
         """
         return func(self) and all(child.all(func) for child in self.children)
 
-    def any(self, func):
+    def any(self, func: Callable) -> bool:
         """True, if func returns true for this tree or any of its children
         """
         return func(self) or any(child.any(func) for child in self.children)
+
+    def translate(self, old_base: str, new_base: str):
+        assert osp.abspath(self.path) == osp.abspath(old_base)
+        assert old_base == self.path or osp.commonpath([old_base, self.path])
+
+        translated = deepcopy(self)
+
+        def func(t: Tree):
+            t.path = osp.join(new_base, osp.relpath(t.path, old_base))
+
+        translated.apply(func)
+        return translated
+
+
+def is_inside(inner, outer):
+    inner = osp.abspath(inner)
+    outer = osp.abspath(outer)
+    return osp.commonpath([outer, inner]) == outer
+
+
+def points_into(link, path):
+    return os.readlink(link)
 
 
 def run_module():
@@ -258,17 +294,28 @@ def run_module():
     base_dir = osp.expanduser(module.params["base_dir"])
     overlay_dir = osp.expanduser(module.params["overlay_dir"])
 
-    if not osp.isdir(base_dir):
+    if not osp.isdir(base_dir) or osp.islink(base_dir):
         module.fail_json(
             msg="base_dir has to exist and be a directory", **result
         )
-    if not osp.isdir(overlay_dir):
+    if not osp.isdir(overlay_dir) or osp.islink(overlay_dir):
         module.fail_json(
             msg="overlay_dir has to exist and be a directory", **result
         )
+    if osp.samefile(base_dir, overlay_dir) or is_inside(base_dir, overlay_dir):
+        module.fail_json(
+            msg="base_dir must not be (inside) overlay_dir", **result
+        )
 
-    for overlay_path in os.listdir(overlay_dir):
-        base_path = osp.join(base_dir, osp.relpath(overlay_path, overlay_dir))
+    overlay_tree = Tree.from_path(overlay_dir)
+    base_tree = overlay_tree.translate(overlay_dir, base_dir)
+    print("overlay tree", "-"*10)
+    overlay_tree.apply(lambda t: print(repr(t)))
+    print("translated tree", "-"*10)
+    base_tree.apply(lambda t: print(osp.normpath(t)))
+    print("actual base tree", "-"*10)
+    Tree.from_path(base_dir).apply(lambda t: print(osp.normpath(t)))
+    exit(69)
 
     if module.check_mode:
         module.exit_json(**result)
