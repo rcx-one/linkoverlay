@@ -33,6 +33,15 @@ MODULE_ARGS = {
         "type": "str",
         "required": True
     },
+    # "state": {
+    #     "description": [
+    #         "All created symlinks will point into this directory."
+    #     ],
+    #     "type": "str",
+    #     "required": False,
+    #     "default": "linked",
+    #     "choices": ["linked", "unlinked"]
+    # },
     "relative_links": {
         "description": (
             "Whether relative or absolute symlinks will be created."
@@ -69,9 +78,8 @@ MODULE_ARGS = {
             "If enabled, will create symlinks to whole subtrees of the "
             + "overlay_dir if they dont conflict with the base_dir.",
 
-            "If disabled, will only create symlinks to leaves of the "
-            + "overlay_dir tree and creates missing directories in the "
-            + "base_dir."
+            "If disabled, will only create missing directories and symlinks "
+            + "to leaves of the overlay_dir tree in the base_dir."
         ],
         "type": "bool",
         "required": False,
@@ -231,34 +239,40 @@ class Tree():
         else:
             return [self.path]
 
-    def apply(self, func: Callable):
+    def apply(self, func: Callable, stopping: bool = False):
         """Applies a function to this tree and all its children recursively.
-        Discards return value of func.
+        If stopping is True, stops recursing once func returns False.
         """
-        func(self)
-        for child in self.children:
-            child.apply(func)
-
-    def map(self, func: Callable, flatten: bool = False) -> List:
-        """Like apply, but captures the function output in a list.
-        The list structure will be recursive if flatten is False.
-        """
-        result = func(self)
-        children = [child.map(func, flatten) for child in self.children]
-        if flatten or not self.is_dir:
-            return [result] + children
-        else:
-            return [result, children]
+        ret = func(self)
+        if not stopping or ret:
+            for child in self.children:
+                child.apply(func, stopping)
 
     def all(self, func: Callable) -> bool:
-        """True, if func returns true for this tree and all of its children
+        """True, if func returns true for this tree and all of its children.
         """
         return func(self) and all(child.all(func) for child in self.children)
 
     def any(self, func: Callable) -> bool:
-        """True, if func returns true for this tree or any of its children
+        """True, if func returns true for this tree or any of its children.
         """
         return func(self) or any(child.any(func) for child in self.children)
+
+    def apply_children(self, func: Callable, stopping: bool = False):
+        """Like apply, but only applies to children of self.
+        """
+        for child in self.children:
+            child.apply(func, stopping)
+
+    def all_children(self, func: Callable) -> bool:
+        """Like all, but only inspects children of self.
+        """
+        return all(child.all(func) for child in self.children)
+
+    def any_children(self, func: Callable) -> bool:
+        """Like any, but only inspects children self.
+        """
+        return any(child.any(func) for child in self.children)
 
     def translate(self, old_base: str, new_base: str):
         assert osp.abspath(self.path) == osp.abspath(old_base)
@@ -309,27 +323,24 @@ def run_module():
 
     overlay_tree = Tree.from_path(overlay_dir)
     base_tree = overlay_tree.translate(overlay_dir, base_dir)
-    print("overlay tree", "-"*10)
-    overlay_tree.apply(lambda t: print(repr(t)))
-    print("translated tree", "-"*10)
-    base_tree.apply(lambda t: print(osp.normpath(t)))
-    print("actual base tree", "-"*10)
-    Tree.from_path(base_dir).apply(lambda t: print(osp.normpath(t)))
-    exit(69)
+
+    def not_conflicting(tree: Tree):
+        # Trees do not conflict if they don't exist in base_dir,
+        # are links into overlay_dir or are directories
+        return (
+            not osp.exists(tree)
+            or osp.islink(tree) and points_into(tree, overlay_tree)
+            or not osp.islink(tree) and osp.isdir(tree)
+        )
+
+    base_tree.apply_children(lambda t: print(not_conflicting(t), t))
+    x = []
+    base_tree.apply(lambda t: x.append(t.path))
+    for i in x:
+        print(i)
 
     if module.check_mode:
         module.exit_json(**result)
-
-    # use whatever logic you need to determine whether or not this module
-    # made any modifications to your target
-    if module.params['new']:
-        result['changed'] = True
-
-    # during the execution of the module, if there is an exception or a
-    # conditional state that effectively causes a failure, run
-    # AnsibleModule.fail_json() to pass in the message and the result
-    if module.params['name'] == 'fail me':
-        module.fail_json(msg='You requested this to fail', **result)
 
     # in the event of a successful module execution, you will want to
     # simple AnsibleModule.exit_json(), passing the key/value results
