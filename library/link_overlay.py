@@ -294,7 +294,7 @@ def is_inside(inner, outer):
 
 
 def points_into(link, path):
-    return os.readlink(link)
+    return is_inside(os.readlink(link), path)
 
 
 def run_module():
@@ -321,23 +321,19 @@ def run_module():
             msg="base_dir must not be (inside) overlay_dir", **result
         )
 
-    overlay_tree = Tree.from_path(overlay_dir)
-    base_tree = overlay_tree.translate(overlay_dir, base_dir)
+    overlay = Tree.from_path(overlay_dir)
+    translation = overlay.translate(overlay_dir, base_dir)
 
-    def not_conflicting(tree: Tree):
+    def is_conflicting(tree: Tree):
         # Trees do not conflict if they don't exist in base_dir,
         # are links into overlay_dir or are directories
-        return (
+        return not (
             not osp.exists(tree)
-            or osp.islink(tree) and points_into(tree, overlay_tree)
+            or osp.islink(tree) and points_into(tree, overlay)
             or not osp.islink(tree) and osp.isdir(tree)
         )
 
-    base_tree.apply_children(lambda t: print(not_conflicting(t), t))
-    x = []
-    base_tree.apply(lambda t: x.append(t.path))
-    for i in x:
-        print(i)
+    translation.apply_children(lambda t: print(is_conflicting(t), t))
 
     if module.check_mode:
         module.exit_json(**result)
