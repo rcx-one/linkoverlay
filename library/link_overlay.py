@@ -185,9 +185,8 @@ class Tree():
     """
     path: str
     children: List["Tree"]
-    is_dir: bool
     depth: Optional[int]
-    props: Dict = field(default_factory=dict, init=False)
+    props: Dict = field(default_factory=dict)
 
     def __str__(self):
         return self.path
@@ -221,8 +220,8 @@ class Tree():
         return Tree(
             path=path,
             children=children,
-            is_dir=is_dir,
-            depth=depth
+            depth=depth,
+            props={"is_dir": is_dir}
         )
 
     @property
@@ -231,13 +230,19 @@ class Tree():
 
     @property
     def files(self) -> List[str]:
-        if self.is_dir:
+        if self.props["is_dir"]:
             files = []
             for child in self.children:
                 files += child.files
             return files
         else:
             return [self.path]
+
+    def set_prop(self, key, value):
+        self.props[key] = value
+
+    def get_prop(self, key, default=None):
+        return self.props.get(key, default)
 
     def apply(self, func: Callable, stopping: bool = False):
         """Applies a function to this tree and all its children recursively.
@@ -294,7 +299,11 @@ def is_inside(inner, outer):
 
 
 def points_into(link, path):
-    return is_inside(os.readlink(link), path)
+    link_target = os.readlink(link)
+    if not osp.isabs(link_target):
+        link_dir = osp.dirname(link)
+        link_target = osp.abspath(osp.join(link_dir, link_target))
+    return is_inside(link_target, path)
 
 
 def run_module():
@@ -324,16 +333,41 @@ def run_module():
     overlay = Tree.from_path(overlay_dir)
     translation = overlay.translate(overlay_dir, base_dir)
 
-    def is_conflicting(tree: Tree):
-        # Trees do not conflict if they don't exist in base_dir,
-        # are links into overlay_dir or are directories
-        return not (
-            not osp.exists(tree)
-            or osp.islink(tree) and points_into(tree, overlay)
-            or not osp.islink(tree) and osp.isdir(tree)
+    def mark_linked(tree: Tree) -> bool:
+        if osp.islink(tree) and points_into(tree, overlay_dir):
+            # Consider children linked, too
+            tree.apply(lambda t: t.set_prop("linked", True))
+            return False  # Stop recursing
+        else:
+            tree.set_prop("linked", False)
+            return True  # Recurse into children
+
+    def mark_broken(tree: Tree):
+        tree.set_prop(
+            "broken",
+            tree.get_prop("linked") and not osp.exists(tree)
         )
 
-    translation.apply_children(lambda t: print(is_conflicting(t), t))
+    def mark_conflicting(tree: Tree):
+        tree.set_prop(
+            "conflicting",
+            osp.exists(tree)
+            and not tree.get_prop("linked")
+            and (not osp.isdir(tree) or osp.islink(tree))
+        )
+
+    def mark_collapsible(tree: Tree):
+        tree.set_prop(
+            "collapsible",
+            True  # TODO
+        )
+
+    translation.apply_children(mark_linked, stopping=True)
+    translation.apply_children(mark_broken)
+    translation.apply_children(mark_conflicting)
+
+    translation.apply_children(lambda t: print(
+        t.props["linked"], t.props["conflicting"], t))
 
     if module.check_mode:
         module.exit_json(**result)
