@@ -228,27 +228,15 @@ class Tree():
     def name(self) -> str:
         return osp.basename(self.name)
 
-    @property
-    def files(self) -> List[str]:
-        if self.props["is_dir"]:
-            files = []
-            for child in self.children:
-                files += child.files
-            return files
-        else:
-            return [self.path]
-
     def set_prop(self, key, value):
         self.props[key] = value
-
-    def get_prop(self, key, default=None):
-        return self.props.get(key, default)
 
     def apply(self, func: Callable, stopping: bool = False):
         """Applies a function to this tree and all its children recursively.
         If stopping is True, stops recursing once func returns False.
         """
         ret = func(self)
+        assert not stopping or isinstance(ret, bool)
         if not stopping or ret:
             for child in self.children:
                 child.apply(func, stopping)
@@ -345,22 +333,38 @@ def run_module():
     def mark_broken(tree: Tree):
         tree.set_prop(
             "broken",
-            tree.get_prop("linked") and not osp.exists(tree)
+            tree.props["linked"] and not osp.exists(tree)
         )
 
     def mark_conflicting(tree: Tree):
         tree.set_prop(
             "conflicting",
             osp.exists(tree)
-            and not tree.get_prop("linked")
+            and not tree.props["linked"]
             and (not osp.isdir(tree) or osp.islink(tree))
         )
 
-    def mark_collapsible(tree: Tree):
+    def mark_collapsed(tree: Tree) -> bool:
         tree.set_prop(
-            "collapsible",
-            True  # TODO
+            "collapsed",
+            tree.props["is_dir"] and tree.props["linked"]
         )
+
+    def mark_collapsible(tree: Tree) -> bool:
+        collapsible = not tree.props["conflicting"]
+        if collapsible and osp.exists(tree):
+            real_tree = Tree.from_path(tree)
+            real_tree.apply_children(mark_linked, stopping=True)
+            collapsible = real_tree.all_children(
+                lambda t: t.props["is_dir"] or t.props["linked"]
+            )
+
+        if collapsible:
+            tree.apply(lambda t: t.set_prop("collapsible", True))
+            return False  # Stop recursing
+        else:
+            tree.set_prop("collapsible", False)
+            return True  # Recurse into children
 
     translation.apply_children(mark_linked, stopping=True)
     translation.apply_children(mark_broken)
