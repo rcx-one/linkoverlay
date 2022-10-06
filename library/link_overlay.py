@@ -12,7 +12,8 @@ from dataclasses import dataclass, field
 from copy import deepcopy
 from operator import add
 from functools import reduce
-from shutil import rmtree
+import shutil
+from pathlib import Path
 
 MODULE_ARGS = {
     "base_dir": {
@@ -322,13 +323,15 @@ class Tree():
         """
         return any(child.any(func) for child in self.children)
 
-    def translate(self, old_base: str, new_base: str):
+    def translate_path(self, old_base: str, new_base: str):
         assert osp.isabs(self.path) == osp.isabs(old_base)
         assert old_base == self.path or osp.commonpath([old_base, self.path])
+        return osp.join(new_base, osp.relpath(self.path, old_base))
 
+    def translate(self, old_base: str, new_base: str):
         def substitute(tree: Tree):
             tree.set_prop("original_path", tree.path)
-            tree.path = osp.join(new_base, osp.relpath(tree.path, old_base))
+            tree.path = tree.translate_path(old_base, new_base)
 
         translated = deepcopy(self)
         translated.apply(substitute)
@@ -365,6 +368,10 @@ def run_module():
 
     base_dir = osp.expanduser(module.params["base_dir"])
     overlay_dir = osp.expanduser(module.params["overlay_dir"])
+    backup_dir = osp.expanduser(module.params["backup_dir"])
+
+    collapse = module.params["collapse"]
+    replace = module.params["conflict"] == "replace"
 
     if not isdir(base_dir):
         module.fail_json(
@@ -377,6 +384,20 @@ def run_module():
     if osp.samefile(base_dir, overlay_dir) or is_inside(base_dir, overlay_dir):
         module.fail_json(
             msg="base_dir must not be (inside) overlay_dir", **result
+        )
+
+    if backup_dir and not osp.isdir(backup_dir):
+        module.fail_json(
+            msg="backup_dir directory has to exist", **result
+        )
+    if backup_dir and len(os.listdir(backup_dir)) > 0:
+        module.fail_json(
+            msg="backup_dir must be empty", **result
+        )
+    if backup_dir and (osp.samefile(backup_dir, overlay_dir)
+                       or is_inside(backup_dir, overlay_dir)):
+        module.fail_json(
+            msg="backup_dir must not be (inside) overlay_dir", **result
         )
 
     overlay = Tree.from_path(overlay_dir)
@@ -415,7 +436,6 @@ def run_module():
         )
 
     def mark_collapsible(tree: Tree) -> bool:
-        replace = module.params["conflict"] == "replace"
         collapsible = (
             tree.props["is_dir"]
             and not tree.props["conflicting"] or replace
@@ -446,8 +466,6 @@ def run_module():
             return True  # Recurse into children
 
     def mark_removable(tree: Tree) -> bool:
-        collapse = module.params["collapse"]
-        replace = module.params["conflict"] == "replace"
         removable = (
             tree.props["broken"]
             or
@@ -469,22 +487,27 @@ def run_module():
             tree.set_prop("removable", False)
             return True  # Recurse into children
 
-    # TODO: add to_remove to mark only the root path of subtrees that are removable
-
-    def mark_linkable(tree: Tree) -> bool:
-        collapse = module.params["collapse"]
-        collapsible = tree.props["collapsible"]
-        replace = module.params["conflict"] == "replace"
-        linkable = (
-            (tree.props["removable"] or not tree.props["linked"])
-            and (not tree.props["conflicting"] or replace)
-        )
-        if linkable and (not tree.props["is_dir"] or collapse and collapsible):
-            tree.set_prop("linkable", True)
-            tree.apply_children(lambda t: t.set_prop("linkable", False))
+    def mark_remove(tree: Tree) -> bool:
+        if tree.props["removable"]:
+            tree.set_prop("remove", True)
+            tree.apply_children(lambda t: t.set_prop("remove", False))
             return False  # Stop recursing
         else:
-            tree.set_prop("linkable", False)
+            tree.set_prop("remove", False)
+            return True  # Recurse into children
+
+    def mark_link(tree: Tree) -> bool:
+        collapsible = tree.props["collapsible"]
+        linkable = (
+            not tree.props["linked"] and not tree.props["conflicting"]
+            or tree.props["removable"]
+        )
+        if linkable and (not tree.props["is_dir"] or collapse and collapsible):
+            tree.set_prop("link", True)
+            tree.apply_children(lambda t: t.set_prop("link", False))
+            return False  # Stop recursing
+        else:
+            tree.set_prop("link", False)
             return True  # Recurse into children
 
     translation.apply_children(mark_linked, stopping=True)
@@ -493,37 +516,26 @@ def run_module():
     translation.apply_children(mark_collapsed)
     translation.apply_children(mark_collapsible, stopping=True)
     translation.apply_children(mark_removable, stopping=True)
-    translation.apply_children(mark_linkable, stopping=True)
+    translation.apply_children(mark_remove, stopping=True)
+    translation.apply_children(mark_link, stopping=True)
 
-    print(
-        "linked;broken;conflicting;collapsed;collapsible;removable;" +
-        "linkable;path"
-    )
-    translation.apply_children(lambda t: print(
-        ';'.join([
-            str(t.props["linked"]),
-            str(t.props["broken"]),
-            str(t.props["conflicting"]),
-            str(t.props["collapsed"]),
-            str(t.props["collapsible"]),
-            str(t.props["removable"]),
-            str(t.props["linkable"]),
-            str(t)
-        ])
-    ))
+    marks = [
+        "linked",
+        "broken",
+        "conflicting",
+        "collapsed",
+        "collapsible",
+        "removable",
+        "remove",
+        "link"
+    ]
+    for mark in marks:
+        print("-"*10)
+        print(mark)
+        for tree in translation.filter_children(lambda t: t.props[mark]):
+            print(tree)
 
     conflicting = translation.filter_children(lambda t: t.props["conflicting"])
-    # print("conflicting:")
-    # for c in conflicting:
-    #     print(c)
-    # removable = translation.filter_children(lambda t: t.props["removable"])
-    # print("removable:")
-    # for r in removable:
-    #     print(r)
-    # linkable = translation.filter_children(lambda t: t.props["linkable"])
-    # for L in linkable:
-    #     print(L)
-
     if conflicting and module.params["conflict"] == "error":
         module.fail_json(
             msg=(
@@ -537,8 +549,53 @@ def run_module():
         for conflict in conflicting:
             module.warn(conflict.path)
 
+    remove = translation.filter_children(lambda t: t.props["remove"])
+    link = translation.filter_children(lambda t: t.props["link"])
+    result["changed"] = len(remove) != 0 or len(link) != 0
+    if remove:
+        result["removed_trees"] = [tree.path for tree in remove]
+    if link:
+        result["created_links"] = [tree.path for tree in link]
+    if backup_dir:
+        result["backed_up"] = [
+            tree.translate_path(base_dir, backup_dir)
+            for tree in remove
+        ]
+
     if module.check_mode:
         module.exit_json(**result)
+
+    for tree in remove:  # type: Tree
+        if backup_dir:
+            backup_path = tree.translate_path(base_dir, backup_dir)
+            os.makedirs(osp.dirname(backup_path), exist_ok=True)
+
+            def cptree(tree: Tree):
+                if osp.islink(tree) or osp.isfile(tree):
+                    shutil.copy2(tree, backup_path, follow_symlinks=False)
+                else:
+                    os.makedirs(tree, exist_ok=True)
+            tree.apply(cptree)
+
+        def rmtree(tree: Tree):
+            if osp.islink(tree) or osp.isfile(tree):
+                os.unlink(tree)
+            else:
+                os.rmdir(tree)
+        Tree.from_path(tree.path).apply_reverse(rmtree)
+
+    for tree in link:  # type: Tree
+        os.makedirs(osp.dirname(tree), exist_ok=True)
+        if module.params["relative_links"]:
+            os.symlink(
+                osp.relpath(
+                    tree.props["original_path"],
+                    osp.dirname(tree)
+                ),
+                tree
+            )
+        else:
+            os.symlink(tree.props["original_path"], tree)
 
     # in the event of a successful module execution, you will want to
     # simple AnsibleModule.exit_json(), passing the key/value results

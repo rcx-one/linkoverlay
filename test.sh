@@ -5,6 +5,7 @@ pushd test
 
 mkdir -p base/{empty.d,linked_abs.d,linked_rel.d,collapsible.d,filled.d,unrelated.d}
 mkdir -p overlay/{empty.d,linked_abs.d,linked_rel.d,collapsible.d,collapsed.d,filled.d,missing.d}
+mkdir backup
 
 touch base/unrelated.f base/
 
@@ -37,10 +38,13 @@ ln -s ../../overlay/filled.d/linked.f base/filled.d/linked.f
 touch base/filled.d/unrelated.f
 ln -s ../unrelated.f base/filled.d/unrelated.l
 
+ln -s ../../overlay/moved.f base/filled.d/moved.f
+
 touch overlay/missing.f
 touch overlay/empty.d/missing.f
 touch overlay/missing.d/missing.f
 touch overlay/collapsed.d/missing.f
 touch overlay/filled.d/missing.f
+touch overlay/filled.d/moved.f
 
 popd
