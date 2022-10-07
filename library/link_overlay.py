@@ -403,41 +403,59 @@ def run_module():
     overlay = Tree.from_path(overlay_dir)
     translation = overlay.translate(overlay_dir, base_dir)
 
-    def mark_linked(tree: Tree) -> bool:
-        if points_to(tree, tree.props["original_path"]):
-            # Consider children linked, too
-            tree.apply(lambda t: t.set_prop("linked", True))
+    def mark_symlinked(tree: Tree) -> bool:
+        """Marks a tree as symlinked, if one of its parents is a symlink
+        """
+        tree.set_prop("symlinked", False)
+        if osp.islink(tree):
+            tree.apply_children(lambda t: t.set_prop("symlinked", True))
             return False  # Stop recursing
         else:
-            tree.set_prop("linked", False)
+            return True  # Recurse into children
+
+    def mark_overlaid(tree: Tree) -> bool:
+        if tree.props["symlinked"]:
+            tree.apply(lambda t: t.set_prop("overlaid", False))
+            return False  # Stop recursing
+        elif points_to(tree, tree.props["original_path"]):
+            # Consider children overlaid, too
+            tree.apply(
+                lambda t: t.set_prop("overlaid", not t.props["symlinked"])
+            )
+            return False  # Stop recursing
+        else:
+            tree.set_prop("overlaid", False)
             return True  # Recurse into children
 
     def mark_broken(tree: Tree):
         tree.set_prop(
             "broken", (
-                points_into(tree, overlay)
-                and not tree.props.get("linked", False)
+                not tree.props["symlinked"]
+                and points_into(tree, overlay)
+                and not tree.props["overlaid"]
             )
         )
 
     def mark_conflicting(tree: Tree):
         tree.set_prop(
             "conflicting",
-            exists(tree)
+            not tree.props["symlinked"]
+            and exists(tree)
             and not tree.props["is_dir"]
-            and not tree.props.get("linked", False)
+            and not tree.props["overlaid"]
             and not tree.props["broken"]
         )
 
     def mark_collapsed(tree: Tree):
         tree.set_prop(
             "collapsed",
-            tree.props["is_dir"] and tree.props["linked"]
+            tree.props["is_dir"] and tree.props["overlaid"]
         )
 
     def mark_collapsible(tree: Tree) -> bool:
         collapsible = (
-            tree.props["is_dir"]
+            not tree.props["symlinked"]
+            and tree.props["is_dir"]
             and not tree.props["conflicting"] or replace
         )
         if collapsible and osp.exists(tree):
@@ -459,7 +477,9 @@ def run_module():
             )
 
         if collapsible:
-            tree.apply(lambda t: t.set_prop("collapsible", True))
+            tree.apply(
+                lambda t: t.set_prop("collapsible", not t.props["symlinked"])
+            )
             return False  # Stop recursing
         else:
             tree.set_prop("collapsible", False)
@@ -498,11 +518,14 @@ def run_module():
 
     def mark_link(tree: Tree) -> bool:
         collapsible = tree.props["collapsible"]
-        linkable = (
-            not tree.props["linked"] and not tree.props["conflicting"]
-            or tree.props["removable"]
+        link = (
+            not tree.props["symlinked"]
+            and not tree.props["overlaid"]
+            and not tree.props["conflicting"]
+            or
+            tree.props["removable"]
         )
-        if linkable and (not tree.props["is_dir"] or collapse and collapsible):
+        if link and (not tree.props["is_dir"] or collapse and collapsible):
             tree.set_prop("link", True)
             tree.apply_children(lambda t: t.set_prop("link", False))
             return False  # Stop recursing
@@ -510,7 +533,8 @@ def run_module():
             tree.set_prop("link", False)
             return True  # Recurse into children
 
-    translation.apply_children(mark_linked, stopping=True)
+    translation.apply_children(mark_symlinked, stopping=True)
+    translation.apply_children(mark_overlaid, stopping=True)
     translation.apply_children(mark_broken)
     translation.apply_children(mark_conflicting)
     translation.apply_children(mark_collapsed)
@@ -520,7 +544,8 @@ def run_module():
     translation.apply_children(mark_link, stopping=True)
 
     marks = [
-        "linked",
+        "symlinked",
+        "overlaid",
         "broken",
         "conflicting",
         "collapsed",
@@ -566,16 +591,17 @@ def run_module():
         module.exit_json(**result)
 
     for tree in remove:  # type: Tree
-        if backup_dir:
+        if tree.props["conflicting"] and backup_dir:
             backup_path = tree.translate_path(base_dir, backup_dir)
             os.makedirs(osp.dirname(backup_path), exist_ok=True)
 
-            def cptree(tree: Tree):
+            def cptree(tree: Tree) -> bool:
                 if osp.islink(tree) or osp.isfile(tree):
                     shutil.copy2(tree, backup_path, follow_symlinks=False)
                 else:
                     os.makedirs(tree, exist_ok=True)
-            tree.apply(cptree)
+                return not osp.islink(tree)
+            tree.apply(cptree, stopping=True)
 
         def rmtree(tree: Tree):
             if osp.islink(tree) or osp.isfile(tree):
