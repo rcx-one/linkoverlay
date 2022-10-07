@@ -569,6 +569,7 @@ def run_module():
         result["backed_up"] = [
             tree.translate_path(base_dir, backup_dir)
             for tree in remove
+            if tree.props["conflicting"]
         ]
 
     if module.check_mode:
