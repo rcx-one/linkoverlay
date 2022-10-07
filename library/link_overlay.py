@@ -491,6 +491,7 @@ def run_module():
             or
             collapse
             and tree.props["collapsible"]
+            and exists(tree)
             and not tree.props["collapsed"]
             or
             not collapse
@@ -543,23 +544,6 @@ def run_module():
     translation.apply_children(mark_remove, stopping=True)
     translation.apply_children(mark_link, stopping=True)
 
-    marks = [
-        "symlinked",
-        "overlaid",
-        "broken",
-        "conflicting",
-        "collapsed",
-        "collapsible",
-        "removable",
-        "remove",
-        "link"
-    ]
-    for mark in marks:
-        print("-"*10)
-        print(mark)
-        for tree in translation.filter_children(lambda t: t.props[mark]):
-            print(tree)
-
     conflicting = translation.filter_children(lambda t: t.props["conflicting"])
     if conflicting and module.params["conflict"] == "error":
         module.fail_json(
@@ -570,7 +554,7 @@ def run_module():
             **result
         )
     elif conflicting and module.params["conflict"] == "warning":
-        module.warn("Found conflicts:")
+        module.warn("Found and ignored conflicts:")
         for conflict in conflicting:
             module.warn(conflict.path)
 
@@ -603,12 +587,10 @@ def run_module():
                 return not osp.islink(tree)
             tree.apply(cptree, stopping=True)
 
-        def rmtree(tree: Tree):
-            if osp.islink(tree) or osp.isfile(tree):
-                os.unlink(tree)
-            else:
-                os.rmdir(tree)
-        Tree.from_path(tree.path).apply_reverse(rmtree)
+        if osp.islink(tree):
+            os.unlink(tree)
+        else:
+            shutil.rmtree(tree)
 
     for tree in link:  # type: Tree
         os.makedirs(osp.dirname(tree), exist_ok=True)
