@@ -13,6 +13,7 @@ from copy import deepcopy
 from operator import add
 from functools import reduce
 import shutil
+from datetime import datetime
 
 MODULE_ARGS = {
     "base_dir": {
@@ -36,15 +37,6 @@ MODULE_ARGS = {
         "type": "str",
         "required": True
     },
-    # "state": {
-    #     "description": [
-    #         "All created symlinks will point into this directory."
-    #     ],
-    #     "type": "str",
-    #     "required": False,
-    #     "default": "linked",
-    #     "choices": ["linked", "unlinked"]
-    # },
     "relative_links": {
         "description": (
             "Whether relative or absolute symlinks will be created."
@@ -171,8 +163,8 @@ EXAMPLES = r'''
 
 RETURN = r'''
 "backed_up":
-    - "/home/user/dotfile_backup/.gitconfig"
-    - "/home/user/dotfile_backup/.config/alacritty.yml"
+    - "/home/user/dotfile_backup/2022-10-15_00-25-21/.gitconfig"
+    - "/home/user/dotfile_backup/2022-10-15_00-25-21/.config/alacritty.yml"
 "changed": true,
 "created_links":
     - "/home/user/.bashrc"
@@ -367,6 +359,10 @@ def run_module():
     overlay_dir = osp.expanduser(module.params["overlay_dir"])
     backup_dir = osp.expanduser(module.params["backup_dir"])
 
+    if backup_dir:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        backup_dir = osp.join(backup_dir, timestamp)
+
     collapse = module.params["collapse"]
     replace = module.params["conflict"] == "replace"
 
@@ -383,16 +379,15 @@ def run_module():
             msg="base_dir must not be (inside) overlay_dir", **result
         )
 
-    if backup_dir and not osp.isdir(backup_dir):
+    if backup_dir and exists(backup_dir) and not isdir(backup_dir):
         module.fail_json(
-            msg="backup_dir directory has to be a directory", **result
+            msg="backup_dir has to be a directory", **result
         )
-    if backup_dir and len(os.listdir(backup_dir)) > 0:
+    if backup_dir and exists(backup_dir) and len(os.listdir(backup_dir)) > 0:
         module.fail_json(
             msg="backup_dir must be empty", **result
         )
-    if backup_dir and (osp.samefile(backup_dir, overlay_dir)
-                       or is_inside(backup_dir, overlay_dir)):
+    if backup_dir and is_inside(backup_dir, overlay_dir):
         module.fail_json(
             msg="backup_dir must not be (inside) overlay_dir", **result
         )
@@ -467,7 +462,7 @@ def run_module():
         collapsible = (
             not tree.props["symlinked"]
             and tree.props["is_dir"]
-            and not tree.props["conflicting"] or replace
+            and (not tree.props["conflicting"] or replace)
         )
         if collapsible and osp.exists(tree):
             def replaceable(dir_path, file_names):
@@ -563,8 +558,25 @@ def run_module():
             tree.set_prop("link", False)
             return True  # Recurse into children
 
+    def mark_stat(tree: Tree) -> bool:
+        """Marks trees that need matching mode and owner.
+        """
+        if tree.props["link"] or tree.props["overlaid"]:
+            tree.set_prop("stat", True)
+            tree.apply_children(lambda t: t.set_prop("stat", False))
+            return False  # Stop recursing
+        else:
+            tree.set_prop(
+                "stat",
+                tree.any_children(
+                    lambda t: t.props["link"] or t.props["overlaid"]
+                )
+            )
+            return True  # Recurse into children
+
     translation.apply_children(mark_remove, stopping=True)
     translation.apply_children(mark_link, stopping=True)
+    translation.apply_children(mark_stat, stopping=True)
 
     conflicting = translation.filter_children(lambda t: t.props["conflicting"])
     if conflicting and module.params["conflict"] == "error":
@@ -633,6 +645,17 @@ def run_module():
             )
         else:
             os.symlink(tree.props["original_path"], tree)
+
+    for tree in translation.filter_children(lambda t: t.props["stat"]):
+        stat = os.stat(tree.props["original_path"], follow_symlinks=False)
+        if not osp.islink(tree):
+            os.chmod(tree, stat.st_mode)
+            os.chown(tree, stat.st_uid, stat.st_gid)
+        else:
+            if os.chmod in os.supports_follow_symlinks:
+                os.chmod(tree, stat.st_mode, follow_symlinks=False)
+            if os.chown in os.supports_follow_symlinks:
+                os.chown(tree, stat.st_uid, stat.st_gid, follow_symlinks=False)
 
     module.exit_json(**result)
 
