@@ -347,6 +347,10 @@ def points_into(link, path):
     return is_inside(link_target, path)
 
 
+def is_relative(link):
+    return osp.islink(link) and not osp.isabs(os.readlink(link))
+
+
 def run_module():
     result = {"changed": False}
 
@@ -365,6 +369,7 @@ def run_module():
 
     collapse = module.params["collapse"]
     replace = module.params["conflict"] == "replace"
+    relative_links = module.params["relative_links"]
 
     if not isdir(base_dir):
         module.fail_json(
@@ -409,16 +414,16 @@ def run_module():
             return True  # Recurse into children
 
     def mark_overlaid(tree: Tree) -> bool:
-        """Marks trees that are already linked to the correct overlay file.
+        """Marks trees that are already linked to the correct overlay file
+        and adhere to the specified relative_links value.
         """
         if tree.props["symlinked"]:
             tree.apply(lambda t: t.set_prop("overlaid", False))
             return False  # Stop recursing
         elif points_to(tree, tree.props["original_path"]):
-            # Consider children overlaid, too
-            tree.apply(
-                lambda t: t.set_prop("overlaid", not t.props["symlinked"])
-            )
+            tree.set_prop("overlaid", is_relative(tree) == relative_links)
+            # Children have to be behind symlink -> consider them not overlaid
+            tree.apply_children(lambda t: t.set_prop("overlaid", False))
             return False  # Stop recursing
         else:
             tree.set_prop("overlaid", False)
@@ -635,16 +640,10 @@ def run_module():
 
     for tree in link:  # type: Tree
         os.makedirs(osp.dirname(tree), exist_ok=True)
-        if module.params["relative_links"]:
-            os.symlink(
-                osp.relpath(
-                    tree.props["original_path"],
-                    osp.dirname(tree)
-                ),
-                tree
-            )
-        else:
-            os.symlink(tree.props["original_path"], tree)
+        target = tree.props["original_path"]
+        if relative_links:
+            target = osp.relpath(target, osp.dirname(tree))
+        os.symlink(target, tree)
 
     for tree in translation.filter_children(lambda t: t.props["stat"]):
         stat = os.stat(tree.props["original_path"], follow_symlinks=False)
