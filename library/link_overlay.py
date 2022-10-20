@@ -587,6 +587,7 @@ def main():
             )
         )
         if tree.props["link"] or tree.props["overlaid"]:
+            # Handle symlink stats
             tree.set_prop(
                 "stat",
                 tree.props["link"]  # New links are always adjusted
@@ -595,6 +596,7 @@ def main():
             tree.apply_children(lambda t: t.set_prop("stat", False))
             return False  # Stop recursing
         else:
+            # Handle directory stats
             tree.set_prop(
                 "stat",
                 not matches
