@@ -24,7 +24,7 @@ MODULE_ARGS = {
             "All symlinks pointing into overlay_dir will be created in this "
             + "directory."
         ],
-        "type": "str",
+        "type": "path",
         "required": True
     },
     "overlay_dir": {
@@ -34,7 +34,7 @@ MODULE_ARGS = {
 
             "All created symlinks will point into this directory."
         ],
-        "type": "str",
+        "type": "path",
         "required": True
     },
     "relative_links": {
@@ -52,28 +52,32 @@ MODULE_ARGS = {
 
             "error: Will fail on conflict.",
 
-            "ignore: Will ignore overlay files and keep the base files.",
-
-            "warning: Like ignore, but will print a warning.",
+            "keep: Will ignore overlay files and keep the base files.",
 
             "replace: Will replace original file with symlink to overlay.",
 
-            "Symlinks pointing into overlay_dir are always replaced."
+            "Symlinks pointing into overlay_dir will always be replaced."
         ],
         "type": "str",
         "required": False,
         "default": "error",
-        "choices": ["error", "warning", "ignore", "replace"]
+        "choices": ["error", "keep", "replace"]
+    },
+    "warn_conflict": {
+        "description": "Whether found conflicts will result in a warning.",
+        "type": "bool",
+        "required": False,
+        "default": True
     },
     "backup_dir": {
         "description": [
-            "Replaced files will be backed up to this directory.",
+            "Conflicting files will be backed up to this directory.",
 
-            "If conflict is not set to 'replace', this has not effect.",
+            "If conflict is not set to 'replace', this has no effect.",
 
-            "If unset, no backups will be made."
+            "If not set, no backups will be made."
         ],
-        "type": "str",
+        "type": "path",
         "required": False,
         "default": ""
     },
@@ -118,7 +122,10 @@ def generate_option_doc(
             doc_string += ", ".join('"' + line + '"' for line in lines)
             doc_string += "]\n"
         else:
-            doc_string += '"' + lines[0] + '"' + "\n"
+            if isinstance(val, (bool, int, float)):
+                doc_string += lines[0] + "\n"
+            else:
+                doc_string += '"' + lines[0] + '"' + "\n"
     return doc_string
 
 
@@ -167,11 +174,61 @@ RETURN = r'''
 
 
 def exists(path: os.PathLike) -> bool:
+    """Whether path exists.
+    Symlinks - broken or not - are considered existing.
+    """
     return osp.exists(path) or osp.islink(path)
 
 
 def isdir(path: os.PathLike) -> bool:
+    """Whether path is a directory.
+    Symlinks - regardless of their target - are not considered directories.
+    """
     return osp.isdir(path) and not osp.islink(path)
+
+
+def is_inside(inner: os.PathLike, outer: os.PathLike) -> bool:
+    """Whether inner is a path inside or equal to outer.
+    """
+    inner = osp.abspath(inner)
+    outer = osp.abspath(outer)
+    return osp.commonpath([outer, inner]) == outer
+
+
+def points_to(link: os.PathLike, path: os.PathLike) -> bool:
+    """Whether link is a symlink that points to path.
+    """
+    if not osp.islink(link):
+        return False
+    link_target = osp.join(osp.dirname(link), os.readlink(link))
+    return osp.abspath(link_target) == osp.abspath(path)
+
+
+def points_into(link: os.PathLike, path: os.PathLike) -> bool:
+    """Whether link is a symlink that points to or into path.
+    """
+    if not osp.islink(link):
+        return False
+    link_target = osp.join(osp.dirname(link), os.readlink(link))
+    return is_inside(link_target, path)
+
+
+def is_relative_link(link: os.PathLike) -> bool:
+    """Whether link is a relative symlink.
+    """
+    return osp.islink(link) and not osp.isabs(os.readlink(link))
+
+
+def equal_mode(a: os.PathLike, b: os.PathLike) -> bool:
+    a_stat = os.stat(a, follow_symlinks=False)
+    b_stat = os.stat(b, follow_symlinks=False)
+    return a_stat.st_mode == b_stat.st_mode
+
+
+def equal_owner(a: os.PathLike, b: os.PathLike) -> bool:
+    a_stat = os.stat(a, follow_symlinks=False)
+    b_stat = os.stat(b, follow_symlinks=False)
+    return a_stat.st_uid == b_stat.st_uid and a_stat.st_gid == b_stat.st_gid
 
 
 @dataclass
@@ -311,37 +368,7 @@ class Tree():
         return translated
 
 
-def is_inside(inner, outer):
-    """Whether inner is a path inside or equal to outer.
-    """
-    inner = osp.abspath(inner)
-    outer = osp.abspath(outer)
-    return osp.commonpath([outer, inner]) == outer
-
-
-def points_to(link, path):
-    """Whether link is a symlink that points to path
-    """
-    if not osp.islink(link):
-        return False
-    link_target = osp.join(osp.dirname(link), os.readlink(link))
-    return osp.abspath(link_target) == osp.abspath(path)
-
-
-def points_into(link, path):
-    """Whether link is a symlink that points to or into path
-    """
-    if not osp.islink(link):
-        return False
-    link_target = osp.join(osp.dirname(link), os.readlink(link))
-    return is_inside(link_target, path)
-
-
-def is_relative(link):
-    return osp.islink(link) and not osp.isabs(os.readlink(link))
-
-
-def run_module():
+def main():
     result = {"changed": False}
 
     module = AnsibleModule(
@@ -349,9 +376,9 @@ def run_module():
         supports_check_mode=True
     )
 
-    base_dir = osp.expanduser(module.params["base_dir"])
-    overlay_dir = osp.expanduser(module.params["overlay_dir"])
-    backup_dir = osp.expanduser(module.params["backup_dir"])
+    base_dir = module.params["base_dir"]
+    overlay_dir = module.params["overlay_dir"]
+    backup_dir = module.params["backup_dir"]
 
     if backup_dir:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -411,7 +438,7 @@ def run_module():
             tree.apply(lambda t: t.set_prop("overlaid", False))
             return False  # Stop recursing
         elif points_to(tree, tree.props["original_path"]):
-            tree.set_prop("overlaid", is_relative(tree) == relative_links)
+            tree.set_prop("overlaid", is_relative_link(tree) == relative_links)
             # Children have to be behind symlink -> consider them not overlaid
             tree.apply_children(lambda t: t.set_prop("overlaid", False))
             return False  # Stop recursing
@@ -512,14 +539,6 @@ def run_module():
             tree.set_prop("removable", False)
             return True  # Recurse into children
 
-    translation.apply_children(mark_symlinked, stopping=True)
-    translation.apply_children(mark_overlaid, stopping=True)
-    translation.apply_children(mark_broken)
-    translation.apply_children(mark_conflicting)
-    translation.apply_children(mark_collapsed)
-    translation.apply_children(mark_collapsible, stopping=True)
-    translation.apply_children(mark_removable, stopping=True)
-
     def mark_remove(tree: Tree) -> bool:
         """Marks trees that will be recursively removed.
         Children of removed trees are not marked, because they are implicitly
@@ -556,19 +575,45 @@ def run_module():
     def mark_stat(tree: Tree) -> bool:
         """Marks trees that need matching mode and owner.
         """
+        matches = (
+            exists(tree)
+            and (
+                os.chmod not in os.supports_follow_symlinks
+                or equal_mode(tree.path, tree.props["original_path"])
+            )
+            and (
+                os.chown not in os.supports_follow_symlinks
+                or equal_owner(tree.path, tree.props["original_path"])
+            )
+        )
         if tree.props["link"] or tree.props["overlaid"]:
-            tree.set_prop("stat", True)
+            tree.set_prop(
+                "stat",
+                tree.props["link"]  # New links are always adjusted
+                or not matches
+            )
             tree.apply_children(lambda t: t.set_prop("stat", False))
             return False  # Stop recursing
         else:
             tree.set_prop(
                 "stat",
-                tree.any_children(
+                not matches
+                and tree.any_children(
                     lambda t: t.props["link"] or t.props["overlaid"]
                 )
             )
             return True  # Recurse into children
 
+    # Mark tree properties
+    translation.apply_children(mark_symlinked, stopping=True)
+    translation.apply_children(mark_overlaid, stopping=True)
+    translation.apply_children(mark_broken)
+    translation.apply_children(mark_conflicting)
+    translation.apply_children(mark_collapsed)
+    translation.apply_children(mark_collapsible, stopping=True)
+    translation.apply_children(mark_removable, stopping=True)
+
+    # Mark planned actions
     translation.apply_children(mark_remove, stopping=True)
     translation.apply_children(mark_link, stopping=True)
     translation.apply_children(mark_stat, stopping=True)
@@ -578,22 +623,29 @@ def run_module():
         module.fail_json(
             msg=(
                 "Found and replaced conflicts:\n"
-                + '\n'.join(c.path for c in conflicting)
+                + '\n'.join(tree.path for tree in conflicting)
             ),
             **result
         )
-    elif conflicting and module.params["conflict"] == "warning":
-        module.warn("Found and ignored conflicts:")
-        for conflict in conflicting:
-            module.warn(conflict.path)
+    elif conflicting and module.params["warn_conflict"]:
+        module.warn("Found conflicts:")
+        for tree in conflicting:
+            module.warn(tree.path)
 
     remove = translation.filter_children(lambda t: t.props["remove"])
-    link = translation.filter_children(lambda t: t.props["link"])
-    result["changed"] = len(remove) != 0 or len(link) != 0
     if remove:
         result["removed_trees"] = [tree.path for tree in remove]
+
+    link = translation.filter_children(lambda t: t.props["link"])
     if link:
         result["created_links"] = [tree.path for tree in link]
+
+    stat = translation.filter_children(lambda t: t.props["stat"])
+    if stat:
+        result["changed_stats"] = [tree.path for tree in stat]
+
+    result["changed"] = not len(remove) == len(link) == len(stat) == 0
+
     if backup_dir:
         backup_list = [
             tree.translate_path(base_dir, backup_dir)
@@ -619,7 +671,7 @@ def run_module():
                     shutil.copy2(tree, backup_path, follow_symlinks=False)
                 else:
                     os.makedirs(tree, exist_ok=True)
-                # Recurse into children if tree is not a link
+                # Recurse into children if tree is not a symlink
                 return not osp.islink(tree)
             tree.apply(cptree, stopping=True)
 
@@ -635,7 +687,7 @@ def run_module():
             target = osp.relpath(target, osp.dirname(tree))
         os.symlink(target, tree)
 
-    for tree in translation.filter_children(lambda t: t.props["stat"]):
+    for tree in stat:  # type: Tree
         stat = os.stat(tree.props["original_path"], follow_symlinks=False)
         if not osp.islink(tree):
             os.chmod(tree, stat.st_mode)
@@ -647,10 +699,6 @@ def run_module():
                 os.chown(tree, stat.st_uid, stat.st_gid, follow_symlinks=False)
 
     module.exit_json(**result)
-
-
-def main():
-    run_module()
 
 
 if __name__ == '__main__':
