@@ -118,7 +118,7 @@ def generate_option_doc(
             doc_string += ", ".join('"' + line + '"' for line in lines)
             doc_string += "]\n"
         else:
-            doc_string += lines[0] + "\n"
+            doc_string += '"' + lines[0] + '"' + "\n"
     return doc_string
 
 
@@ -127,8 +127,7 @@ def generate_options_doc():
                    for name, attrs in MODULE_ARGS.items())
 
 
-DOCUMENTATION = (
-    r'''
+DOCUMENTATION = r'''
 ---
 module: link_overlay
 
@@ -141,16 +140,7 @@ version_added: "2.3.4"
 author: Eike (https://git.rcx.one/eike)
 
 options:
-'''
-    + generate_options_doc()
-    + r'''
-# Specify this value according to your collection
-# in format of namespace.collection.doc_fragment_name
-extends_documentation_fragment:
-    - my_namespace.my_collection.my_doc_fragment_name
-
-'''
-)
+''' + generate_options_doc()
 
 EXAMPLES = r'''
 - name: Overlay dotfiles
