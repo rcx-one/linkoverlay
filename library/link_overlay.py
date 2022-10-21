@@ -575,19 +575,19 @@ def main():
     def mark_stat(tree: Tree) -> bool:
         """Marks trees that need matching mode and owner.
         """
-        matches = (
-            exists(tree)
-            and (
-                os.chmod not in os.supports_follow_symlinks
-                or equal_mode(tree.path, tree.props["original_path"])
-            )
-            and (
-                os.chown not in os.supports_follow_symlinks
-                or equal_owner(tree.path, tree.props["original_path"])
-            )
-        )
         if tree.props["link"] or tree.props["overlaid"]:
             # Handle symlink stats
+            matches = (
+                exists(tree)
+                and (
+                    os.chmod not in os.supports_follow_symlinks
+                    or equal_mode(tree.path, tree.props["original_path"])
+                )
+                and (
+                    os.chown not in os.supports_follow_symlinks
+                    or equal_owner(tree.path, tree.props["original_path"])
+                )
+            )
             tree.set_prop(
                 "stat",
                 tree.props["link"]  # New links are always adjusted
@@ -597,6 +597,11 @@ def main():
             return False  # Stop recursing
         else:
             # Handle directory stats
+            matches = (
+                exists(tree)
+                and equal_mode(tree.path, tree.props["original_path"])
+                and equal_owner(tree.path, tree.props["original_path"])
+            )
             tree.set_prop(
                 "stat",
                 not matches
