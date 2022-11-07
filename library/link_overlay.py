@@ -21,8 +21,8 @@ MODULE_ARGS = {
             "The directory on the managed node where the overlay will be "
             + "applied.",
 
-            "All symlinks pointing into overlay_dir will be created in this "
-            + "directory."
+            "All symlinks pointing into C(overlay_dir) will be created in "
+            + "this directory."
         ],
         "type": "path",
         "required": True
@@ -47,16 +47,16 @@ MODULE_ARGS = {
     },
     "conflict": {
         "description": [
-            "How files existing in both the base_dir tree and the overlay_dir "
-            + "tree will be handled:",
+            "How files existing in both the C(base_dir) tree and the "
+            + "C(overlay_dir) tree will be handled:",
 
-            "error: Will fail on conflict.",
+            "C(error): Will fail on conflict.",
 
-            "keep: Will ignore overlay files and keep the base files.",
+            "C(keep): Will ignore overlay files and keep the base files.",
 
-            "replace: Will replace original file with symlink to overlay.",
+            "C(replace): Will replace original file with symlink to overlay.",
 
-            "Symlinks pointing into overlay_dir will always be replaced."
+            "Symlinks pointing into C(overlay_dir) will always be replaced."
         ],
         "type": "str",
         "required": False,
@@ -73,7 +73,7 @@ MODULE_ARGS = {
         "description": [
             "Conflicting files will be backed up to this directory.",
 
-            "If conflict is not set to 'replace', this has no effect.",
+            "If conflict is not set to C(replace), this has no effect.",
 
             "If not set, no backups will be made."
         ],
@@ -87,90 +87,16 @@ MODULE_ARGS = {
             + "single symlink.",
 
             "If enabled, will create symlinks to whole subtrees of the "
-            + "overlay_dir if they dont conflict with the base_dir.",
+            + "C(overlay_dir) if they dont conflict with the C(base_dir).",
 
             "If disabled, will only create missing directories and symlinks "
-            + "to leaves of the overlay_dir tree in the base_dir."
+            + "to leaves of the C(overlay_dir) tree in the C(base_dir)."
         ],
         "type": "bool",
         "required": False,
         "default": True,
     },
 }
-
-
-def generate_option_doc(
-    option_name: str, option_attributes: Dict, indent: str = " "*4
-) -> str:
-    doc_string = indent + option_name + ":\n"
-    for name, val in option_attributes.items():
-        doc_string += indent * 2 + str(name) + ": "
-
-        if isinstance(val, list):
-            value_string = "\n".join(str(line) for line in val)
-        elif hasattr(val, "__name__"):
-            value_string = val.__name__
-        else:
-            value_string = str(val)
-
-        lines = [
-            line.strip().replace('"', "'")
-            for line in value_string.split("\n")
-        ]
-        if len(lines) > 1:
-            doc_string += "["
-            doc_string += ", ".join('"' + line + '"' for line in lines)
-            doc_string += "]\n"
-        else:
-            if isinstance(val, (bool, int, float)):
-                doc_string += lines[0] + "\n"
-            else:
-                doc_string += '"' + lines[0] + '"' + "\n"
-    return doc_string
-
-
-def generate_options_doc():
-    return "".join(generate_option_doc(name, attrs)
-                   for name, attrs in MODULE_ARGS.items())
-
-
-DOCUMENTATION = r'''
----
-module: link_overlay
-
-short_description: Overlay a directory tree onto a base via symlinks
-
-description: This module creates and manages symlinks (and directories) to overlay one directory tree onto another.
-
-version_added: "2.3.4"
-
-author: Eike (https://git.rcx.one/eike)
-
-options:
-''' + generate_options_doc()
-
-EXAMPLES = r'''
-- name: Overlay dotfiles
-  link_overlay:
-    base_dir: ~
-    overlay_dir: ~/dotfiles
-    backup_dir: ~/dotfile_backup
-    conflict: replace
-'''
-
-RETURN = r'''
-"backed_up":
-    - "/home/user/dotfile_backup/2022-10-15_00-25-21/.gitconfig"
-    - "/home/user/dotfile_backup/2022-10-15_00-25-21/.config/alacritty.yml"
-"changed": true,
-"created_links":
-    - "/home/user/.bashrc"
-    - "/home/user/.gitconfig"
-    - "/home/user/.config/alacritty.yml"
-"removed_trees":
-    - "/home/eike/.gitconfig"
-    - "/home/user/.config/alacritty.yml"
-'''
 
 
 def exists(path: os.PathLike) -> bool:

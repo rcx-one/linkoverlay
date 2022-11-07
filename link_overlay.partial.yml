@@ -1,0 +1,27 @@
+DOCUMENTATION:
+  module: link_overlay
+  short_description: Overlay a directory tree onto a base via symlinks
+  description: This module creates and manages symlinks (and directories) to overlay one directory tree onto another.
+  version_added: "2.3.4"
+  author: Eike (https://git.rcx.one/eike)
+
+EXAMPLES:
+  - name: Overlay dotfiles
+    link_overlay:
+      base_dir: ~
+      overlay_dir: ~/dotfiles
+      backup_dir: ~/dotfile_backup
+      conflict: replace
+
+RETURN:
+  backed_up:
+      - /home/user/dotfile_backup/2022-10-15_00-25-21/.gitconfig
+      - /home/user/dotfile_backup/2022-10-15_00-25-21/.config/alacritty.yml
+  changed: true,
+  created_links:
+      - /home/user/.bashrc
+      - /home/user/.gitconfig
+      - /home/user/.config/alacritty.yml
+  removed_trees:
+      - /home/eike/.gitconfig
+      - /home/user/.config/alacritty.yml
