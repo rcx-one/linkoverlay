@@ -555,7 +555,7 @@ def main():
     if conflicting and module.params["conflict"] == "error":
         module.fail_json(
             msg=(
-                "Found and replaced conflicts:\n"
+                "Found conflicts:\n"
                 + '\n'.join(tree.path for tree in conflicting)
             ),
             **result
@@ -577,7 +577,7 @@ def main():
     if stat:
         result["changed_stats"] = [tree.path for tree in stat]
 
-    result["changed"] = not len(remove) == len(link) == len(stat) == 0
+    result["changed"] = not (len(remove) == len(link) == len(stat) == 0)
 
     if backup_dir:
         backup_list = [
