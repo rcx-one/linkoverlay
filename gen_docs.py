@@ -17,18 +17,17 @@ documented_keys = [
 
 
 if __name__ == "__main__":
-    docs = [
-        {
-            name: {
-                key: val
-                for key, val in doc.items()
-                if key in documented_keys
-            }
+    docs = {
+        name: {
+            key: val
+            for key, val in doc.items()
+            if key in documented_keys
         }
         for name, doc in MODULE_ARGS.items()
-    ]
+    }
+
     with open("link_overlay.partial.yml") as doc_partial:
         doc_yml = safe_load(doc_partial)
     doc_yml["DOCUMENTATION"]["options"] = docs
     with open("library/link_overlay.yml", "w") as doc_file:
-        safe_dump(doc_yml, doc_file, default_flow_style=False)
+        safe_dump(doc_yml, doc_file, default_flow_style=False, sort_keys=False)
