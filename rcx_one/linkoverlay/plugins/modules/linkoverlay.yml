@@ -1,0 +1,64 @@
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+DOCUMENTATION:
+  module: linkoverlay
+  short_description: Overlay a directory tree onto a base via symlinks
+  description: This module creates and manages symlinks and directories to overlay
+    one directory tree onto another.
+  version_added: 1.0.0
+  author: Eike (@E1k3)
+  options:
+    base_dir:
+      description:
+      - The directory on the managed node where the overlay will be applied.
+      - All symlinks pointing into C(overlay_dir) will be created in this directory.
+      type: path
+      required: true
+    overlay_dir:
+      description:
+      - The directory on the managed node where the overlay files reside.
+      - All created symlinks will point into this directory.
+      type: path
+      required: true
+    relative_links:
+      description: Whether relative or absolute symlinks will be created.
+      type: bool
+      required: false
+      default: true
+    conflict:
+      description:
+      - 'How files existing in both the C(base_dir) tree and the C(overlay_dir) tree
+        will be handled:'
+      - 'C(error): Will fail on conflict.'
+      - 'C(keep): Will ignore overlay files and keep the base files.'
+      - 'C(replace): Will replace original file with symlink to overlay.'
+      - Symlinks pointing into C(overlay_dir) will always be replaced.
+      type: str
+      required: false
+      default: error
+      choices:
+      - error
+      - keep
+      - replace
+    warn_conflict:
+      description: Whether found conflicts will result in a warning.
+      type: bool
+      required: false
+      default: true
+    backup_dir:
+      description:
+      - Conflicting files will be backed up to this directory.
+      - If conflict is not set to C(replace), this has no effect.
+      - If not set, no backups will be made.
+      type: path
+      required: false
+      default: ''
+    collapse:
+      description:
+      - Whether non-conflicting directory trees will be collapsed into a single symlink.
+      - If enabled, will create symlinks to whole subtrees of the C(overlay_dir) if
+        they dont conflict with the C(base_dir).
+      - If disabled, will only create missing directories and symlinks to leaves of
+        the C(overlay_dir) tree in the C(base_dir).
+      type: bool
+      required: false
+      default: true

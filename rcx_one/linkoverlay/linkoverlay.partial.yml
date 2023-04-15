@@ -1,13 +1,13 @@
 DOCUMENTATION:
-  module: link_overlay
+  module: linkoverlay
   short_description: Overlay a directory tree onto a base via symlinks
-  description: This module creates and manages symlinks (and directories) to overlay one directory tree onto another.
-  version_added: "2.3.4"
-  author: Eike (https://git.rcx.one/eike)
+  description: This module creates and manages symlinks and directories to overlay one directory tree onto another.
+  version_added: "1.0.0"
+  author: Eike (@E1k3)
 
 # EXAMPLES:
 #   - name: Overlay dotfiles
-#     link_overlay:
+#     rcx_one.linkoverlay.linkoverlay:
 #       base_dir: "~"
 #       overlay_dir: "~/dotfiles"
 #       backup_dir: "~/dotfile_backup"
@@ -23,5 +23,5 @@ DOCUMENTATION:
 #       - /home/user/.gitconfig
 #       - /home/user/.config/alacritty.yml
 #   removed_trees:
-#       - /home/eike/.gitconfig
+#       - /home/user/.gitconfig
 #       - /home/user/.config/alacritty.yml

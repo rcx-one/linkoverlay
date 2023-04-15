@@ -1,19 +1,22 @@
-#!/usr/bin/python3
+#!/usr/bin/python
 # -*- coding: utf-8
 
-# Copyright: Eike <eike@zettelkiste.de>
+# Copyright: Eike <ansible@rcx.one>
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
+from __future__ import (absolute_import, division, print_function)
+__metaclass__ = type
 from ansible.module_utils.basic import AnsibleModule
-from typing import Dict, List, Optional, Callable
 import os
 from os import path as osp
-from dataclasses import dataclass, field
-from copy import deepcopy
-from operator import add
-from functools import reduce
-import shutil
 from datetime import datetime
+import shutil
+
+try:
+    from ansible.module_utils.linkoverlay import Tree
+    from ansible.module_utils import linkoverlay as lo
+except ImportError:
+    pass
 
 MODULE_ARGS = {
     "base_dir": {
@@ -99,206 +102,18 @@ MODULE_ARGS = {
 }
 
 
-def exists(path: os.PathLike) -> bool:
-    """Whether path exists.
-    Symlinks - broken or not - are considered existing.
-    """
-    return osp.exists(path) or osp.islink(path)
-
-
-def isdir(path: os.PathLike) -> bool:
-    """Whether path is a directory.
-    Symlinks - regardless of their target - are not considered directories.
-    """
-    return osp.isdir(path) and not osp.islink(path)
-
-
-def is_inside(inner: os.PathLike, outer: os.PathLike) -> bool:
-    """Whether inner is a path inside or equal to outer.
-    """
-    inner = osp.abspath(inner)
-    outer = osp.abspath(outer)
-    return osp.commonpath([outer, inner]) == outer
-
-
-def points_to(link: os.PathLike, path: os.PathLike) -> bool:
-    """Whether link is a symlink that points to path.
-    """
-    if not osp.islink(link):
-        return False
-    link_target = osp.join(osp.dirname(link), os.readlink(link))
-    return osp.abspath(link_target) == osp.abspath(path)
-
-
-def points_into(link: os.PathLike, path: os.PathLike) -> bool:
-    """Whether link is a symlink that points to or into path.
-    """
-    if not osp.islink(link):
-        return False
-    link_target = osp.join(osp.dirname(link), os.readlink(link))
-    return is_inside(link_target, path)
-
-
-def is_relative_link(link: os.PathLike) -> bool:
-    """Whether link is a relative symlink.
-    """
-    return osp.islink(link) and not osp.isabs(os.readlink(link))
-
-
-def equal_mode(a: os.PathLike, b: os.PathLike) -> bool:
-    a_stat = os.stat(a, follow_symlinks=False)
-    b_stat = os.stat(b, follow_symlinks=False)
-    return a_stat.st_mode == b_stat.st_mode
-
-
-def equal_owner(a: os.PathLike, b: os.PathLike) -> bool:
-    a_stat = os.stat(a, follow_symlinks=False)
-    b_stat = os.stat(b, follow_symlinks=False)
-    return a_stat.st_uid == b_stat.st_uid and a_stat.st_gid == b_stat.st_gid
-
-
-@dataclass
-class Tree():
-    """A class representing a filesystem directory tree.
-    This tree may or may not actually exist on the filesystem.
-    """
-    path: str
-    children: List["Tree"]
-    depth: Optional[int]
-    props: Dict = field(default_factory=dict)
-
-    def __str__(self):
-        return self.path
-
-    def __fspath__(self):
-        return self.path
-
-    @staticmethod
-    def from_path(path: str, depth: Optional[int] = None) -> "Tree":
-        """Creates a tree recursively from an existing path.
-        Symlinks are treated like files and are not recursed into.
-        """
-        assert depth is None or depth >= 0
-        assert osp.isabs(path)
-        assert exists(path)
-
-        is_dir = isdir(path)
-
-        if is_dir and depth != 0:
-            child_depth = None if depth is None else depth - 1
-            children = [
-                Tree.from_path(child, child_depth)
-                for child
-                in map(lambda p: osp.join(path, p), os.listdir(path))
-            ]
-        else:
-            children = []
-
-        return Tree(
-            path=path,
-            children=children,
-            depth=depth,
-            props={"is_dir": is_dir}
-        )
-
-    def set_prop(self, key, value):
-        self.props[key] = value
-
-    def apply(self, func: Callable, stopping: bool = False):
-        """Applies a function to this tree and all its children recursively.
-        If stopping is True, stops recursing once func returns False.
-        """
-        ret = func(self)
-        assert not stopping or isinstance(ret, bool)
-        if not stopping or ret:
-            for child in self.children:
-                child.apply(func, stopping)
-
-    def apply_reverse(self, func: Callable):
-        """Like apply, but applies func to children first, then self.
-        """
-        for child in self.children:
-            child.apply_reverse(func)
-        func(self)
-
-    def filter(self, func: Callable):
-        """Returns a list of all trees in self where func returns True.
-        """
-        matching = []
-        if func(self):
-            matching.append(self)
-        return matching + reduce(
-            add,
-            (child.filter(func) for child in self.children),
-            []
-        )
-
-    def all(self, func: Callable) -> bool:
-        """True, if func returns true for this tree and all of its children.
-        """
-        return func(self) and all(child.all(func) for child in self.children)
-
-    def any(self, func: Callable) -> bool:
-        """True, if func returns true for this tree or any of its children.
-        """
-        return func(self) or any(child.any(func) for child in self.children)
-
-    def apply_children(self, func: Callable, stopping: bool = False):
-        """Like apply, but only applies to children of self.
-        """
-        for child in self.children:
-            child.apply(func, stopping)
-
-    def apply_reverse_children(self, func: Callable):
-        """Like apply_reverse, but only applies to children of self.
-        """
-        for child in self.children:
-            child.apply_reverse(func)
-
-    def filter_children(self, func: Callable):
-        """Like filter, but only filters children of self.
-        """
-        return reduce(
-            add,
-            (child.filter(func) for child in self.children),
-            []
-        )
-
-    def all_children(self, func: Callable) -> bool:
-        """Like all, but only inspects children of self.
-        """
-        return all(child.all(func) for child in self.children)
-
-    def any_children(self, func: Callable) -> bool:
-        """Like any, but only inspects children self.
-        """
-        return any(child.any(func) for child in self.children)
-
-    def translate_path(self, old_base: str, new_base: str):
-        """Translates the path of this tree from one base directory to another.
-        """
-        assert osp.isabs(self.path) == osp.isabs(old_base)
-        assert old_base == self.path or osp.commonpath([old_base, self.path])
-        return osp.join(new_base, osp.relpath(self.path, old_base))
-
-    def translate(self, old_base: str, new_base: str):
-        """Replaces the paths of this tree recursively via translate_path.
-        The original path is kept in props["original_path"].
-        """
-        def substitute(tree: Tree):
-            tree.set_prop("original_path", tree.path)
-            tree.path = tree.translate_path(old_base, new_base)
-
-        translated = deepcopy(self)
-        translated.apply(substitute)
-        return translated
-
-
 def main():
     result = {"changed": False}
 
     module = AnsibleModule(
-        argument_spec=MODULE_ARGS,
+        argument_spec={
+            argument: {
+                key: val
+                for key, val in spec.items()
+                if key != "description"
+            }
+            for argument, spec in MODULE_ARGS.items()
+        },
         supports_check_mode=True
     )
 
@@ -314,28 +129,39 @@ def main():
     replace = module.params["conflict"] == "replace"
     relative_links = module.params["relative_links"]
 
-    if not isdir(base_dir):
+    if not lo.isdir(base_dir):
         module.fail_json(
             msg="base_dir has to exist and be a directory", **result
         )
-    if not isdir(overlay_dir):
+
+    if not lo.isdir(overlay_dir):
         module.fail_json(
             msg="overlay_dir has to exist and be a directory", **result
         )
-    if osp.samefile(base_dir, overlay_dir) or is_inside(base_dir, overlay_dir):
+
+    if (
+        osp.samefile(base_dir, overlay_dir)
+        or lo.is_inside(base_dir, overlay_dir)
+    ):
         module.fail_json(
             msg="base_dir must not be (inside) overlay_dir", **result
         )
 
-    if backup_dir and exists(backup_dir) and not isdir(backup_dir):
+    if backup_dir and lo.exists(backup_dir) and not lo.isdir(backup_dir):
         module.fail_json(
             msg="backup_dir has to be a directory", **result
         )
-    if backup_dir and exists(backup_dir) and len(os.listdir(backup_dir)) > 0:
+
+    if (
+        backup_dir
+        and lo.exists(backup_dir)
+        and len(os.listdir(backup_dir)) > 0
+    ):
         module.fail_json(
             msg="backup_dir must be empty", **result
         )
-    if backup_dir and is_inside(backup_dir, overlay_dir):
+
+    if backup_dir and lo.is_inside(backup_dir, overlay_dir):
         module.fail_json(
             msg="backup_dir must not be (inside) overlay_dir", **result
         )
@@ -363,8 +189,9 @@ def main():
         if tree.props["symlinked"]:
             tree.apply(lambda t: t.set_prop("overlaid", False))
             return False  # Stop recursing
-        elif points_to(tree, tree.props["original_path"]):
-            tree.set_prop("overlaid", is_relative_link(tree) == relative_links)
+        elif lo.points_to(tree, tree.props["original_path"]):
+            tree.set_prop("overlaid", lo.is_relative_link(
+                tree) == relative_links)
             # Children have to be behind symlink -> consider them not overlaid
             tree.apply_children(lambda t: t.set_prop("overlaid", False))
             return False  # Stop recursing
@@ -378,7 +205,7 @@ def main():
         tree.set_prop(
             "broken", (
                 not tree.props["symlinked"]
-                and points_into(tree, overlay)
+                and lo.points_into(tree, overlay)
                 and not tree.props["overlaid"]
             )
         )
@@ -389,7 +216,7 @@ def main():
         tree.set_prop(
             "conflicting",
             not tree.props["symlinked"]
-            and exists(tree)
+            and lo.exists(tree)
             and not tree.props["is_dir"]
             and not tree.props["overlaid"]
             and not tree.props["broken"]
@@ -416,8 +243,8 @@ def main():
             def replaceable(dir_path, file_names):
                 paths = (osp.join(dir_path, name) for name in file_names)
                 return all(
-                    isdir(path)
-                    or points_into(path, overlay)
+                    lo.isdir(path)
+                    or lo.points_into(path, overlay)
                     or replace and tree.any(
                         lambda t: t.path == osp.abspath(path)
                     )
@@ -427,7 +254,7 @@ def main():
 
             collapsible = all(
                 replaceable(dir_path, file_names)
-                for dir_path, _, file_names in os.walk(tree)
+                for dir_path, dir_names, file_names in os.walk(tree)
             )
 
         if collapsible:
@@ -448,7 +275,7 @@ def main():
             or
             collapse
             and tree.props["collapsible"]
-            and exists(tree)
+            and lo.exists(tree)
             and not tree.props["collapsed"]
             or
             not collapse
@@ -504,14 +331,14 @@ def main():
         if tree.props["link"] or tree.props["overlaid"]:
             # Handle symlink stats
             matches = (
-                exists(tree)
+                lo.exists(tree)
                 and (
                     os.chmod not in os.supports_follow_symlinks
-                    or equal_mode(tree.path, tree.props["original_path"])
+                    or lo.equal_mode(tree.path, tree.props["original_path"])
                 )
                 and (
                     os.chown not in os.supports_follow_symlinks
-                    or equal_owner(tree.path, tree.props["original_path"])
+                    or lo.equal_owner(tree.path, tree.props["original_path"])
                 )
             )
             tree.set_prop(
@@ -524,9 +351,9 @@ def main():
         else:
             # Handle directory stats
             matches = (
-                exists(tree)
-                and equal_mode(tree.path, tree.props["original_path"])
-                and equal_owner(tree.path, tree.props["original_path"])
+                lo.exists(tree)
+                and lo.equal_mode(tree.path, tree.props["original_path"])
+                and lo.equal_owner(tree.path, tree.props["original_path"])
             )
             tree.set_prop(
                 "stat",
