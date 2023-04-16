@@ -1,14 +1,29 @@
+# Copyright: Eike <ansible@rcx.one>
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+from __future__ import (absolute_import, division, print_function)
+__metaclass__ = type
+
 from ansible.plugins.callback import CallbackBase
 from yaml import dump
 from ansible.executor.task_result import TaskResult
 from ansible.playbook.task import Task
 from ansible.inventory.host import Host
 
+DOCUMENTATION = """
+    name: journal
+    type: notification
+    short_description: logs files created by tagged tasks to a list
+    version_added: "1.0.0"
+    description:
+        - Whenever a task is tagged with 'foo', paths created by this task are appended to the specified file.
+"""
+
 
 class CallbackModule(CallbackBase):
-    CALLBACK_VERSION = 0.1
+    CALLBACK_VERSION = 1.0
     CALLBACK_TYPE = "notification"
-    CALLBACK_NAME = "rcx_one.linkoverlay.callback"
+    CALLBACK_NAME = "rcx_one.linkoverlay.journal"
     CALLBACK_NEEDS_ENABLED = False
 
     def __init__(self, display=None):
