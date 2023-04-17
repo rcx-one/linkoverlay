@@ -5,23 +5,40 @@ DOCUMENTATION:
   version_added: "1.0.0"
   author: Eike (@E1k3)
 
-# EXAMPLES:
-#   - name: Overlay dotfiles
-#     rcx_one.linkoverlay.linkoverlay:
-#       base_dir: "~"
-#       overlay_dir: "~/dotfiles"
-#       backup_dir: "~/dotfile_backup"
-#       conflict: replace
-# 
-# RETURN:
-#   backed_up:
-#       - /home/user/dotfile_backup/2022-10-15_00-25-21/.gitconfig
-#       - /home/user/dotfile_backup/2022-10-15_00-25-21/.config/alacritty.yml
-#   changed: true,
-#   created_links:
-#       - /home/user/.bashrc
-#       - /home/user/.gitconfig
-#       - /home/user/.config/alacritty.yml
-#   removed_trees:
-#       - /home/user/.gitconfig
-#       - /home/user/.config/alacritty.yml
+EXAMPLES:
+  - name: Overlay dotfiles
+    rcx_one.linkoverlay.linkoverlay:
+      base_dir: "~"
+      overlay_dir: "~/dotfiles"
+      backup_dir: "~/dotfile_backup"
+      conflict: replace
+
+RETURN:
+  backed_up:
+      description: Paths to backups of replaced files.
+      returned: if backup_dir is specified
+      type: list
+      sample:
+          - /home/user/dotfile_backup/2022-10-15_00-25-21/.gitconfig
+          - /home/user/dotfile_backup/2022-10-15_00-25-21/.config/alacritty.yml
+  changed_stats:
+      description: Paths that had their mode or owner changed.
+      returned: always
+      type: list
+      sample:
+          - /home/user/.gitconfig
+  created_links:
+      description: Paths to newly created symlinks in the base directory.
+      returned: always
+      type: list
+      sample:
+          - /home/user/.bashrc
+          - /home/user/.gitconfig
+          - /home/user/.config/alacritty.yml
+  removed_trees:
+      description: Root paths of removed directory trees and files.
+      returned: always
+      type: list
+      sample:
+          - /home/user/.gitconfig
+          - /home/user/.config/alacritty.yml
