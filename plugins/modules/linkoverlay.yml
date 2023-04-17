@@ -62,13 +62,9 @@ DOCUMENTATION:
       type: bool
       required: false
       default: true
-EXAMPLES:
-- name: Overlay dotfiles
-  rcx_one.linkoverlay.linkoverlay:
-    base_dir: '~'
-    overlay_dir: ~/dotfiles
-    backup_dir: ~/dotfile_backup
-    conflict: replace
+EXAMPLES: "- name: Overlay dotfiles\n  rcx_one.linkoverlay.linkoverlay:\n    base_dir:\
+  \ \"~\"\n    overlay_dir: \"~/dotfiles\"\n    backup_dir: \"~/dotfile_backup\"\n\
+  \    conflict: replace\n"
 RETURN:
   backed_up:
     description: Paths to backups of replaced files.
