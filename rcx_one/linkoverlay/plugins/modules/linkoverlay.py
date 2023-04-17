@@ -393,16 +393,13 @@ def main():
             module.warn(tree.path)
 
     remove = translation.filter_children(lambda t: t.props["remove"])
-    if remove:
-        result["removed_trees"] = [tree.path for tree in remove]
+    result["removed_trees"] = [tree.path for tree in remove]
 
     link = translation.filter_children(lambda t: t.props["link"])
-    if link:
-        result["created_links"] = [tree.path for tree in link]
+    result["created_links"] = [tree.path for tree in link]
 
     stat = translation.filter_children(lambda t: t.props["stat"])
-    if stat:
-        result["changed_stats"] = [tree.path for tree in stat]
+    result["changed_stats"] = [tree.path for tree in stat]
 
     result["changed"] = not (len(remove) == len(link) == len(stat) == 0)
 
@@ -412,8 +409,7 @@ def main():
             for tree in remove
             if tree.props["conflicting"]
         ]
-        if backup_list:
-            result["backed_up"] = backup_list
+        result["backed_up"] = backup_list
 
     if module.check_mode:
         module.exit_json(**result)
