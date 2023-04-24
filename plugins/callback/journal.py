@@ -15,7 +15,7 @@ DOCUMENTATION = """
     short_description: logs files created by tasks to a list in a file
     version_added: "1.0.0"
     description:
-        - "Whenever a task has a variable 'journal: {path: <path-to-file>}', "
+        - "Whenever a task has a variable 'journal_path: <path-to-file>', "
         - "paths kept present by that task are appended to the given file."
 """
 
@@ -35,10 +35,9 @@ class CallbackModule(CallbackBase):
         # host: Host = result._host
         result: dict = result._result
 
-        var = task.get_vars().get("journal")
-        if isinstance(var, dict) and "path" in var:
-            with open(var["path"], "a") as file:
-
+        path = task.get_vars().get("journal_path")
+        if path is not None:
+            with open(path, "a") as file:
                 if "results" in result:
                     results = result["results"]
                 else:
@@ -50,13 +49,26 @@ class CallbackModule(CallbackBase):
                         "module_args" not in invocation
                         or "path" not in invocation["module_args"]
                     ):
-                        print(
-                            f"{task.action}: "
-                            + "invocation['module_args']['path'] is missing.\n"
-                            + "Module may not be supported by `journal`!"
-                        )
+                        file.write(f"!{task.action}: path argument missing\n")
                         continue
 
                     args = invocation["module_args"]
                     if args.get("state", "present") != "absent":
                         file.write(args["path"] + "\n")
+
+    def v2_runner_on_failed(self, result, ignore_errors=False):
+        # TODO: write errors to file so cleanup may be halted
+        pass
+
+    def v2_runner_item_on_ok(self, result: TaskResult):
+        return
+        super().v2_runner_item_on_ok(result)
+        task: Task = result._task
+        # host: Host = result._host
+        result: dict = result._result
+
+        
+        path = task.get_vars().get("journal_path")
+        if path is not None:
+            with open(path, "a") as file:
+                file.write(repr(result) + "\n")
