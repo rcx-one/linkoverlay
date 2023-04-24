@@ -59,16 +59,3 @@ class CallbackModule(CallbackBase):
     def v2_runner_on_failed(self, result, ignore_errors=False):
         # TODO: write errors to file so cleanup may be halted
         pass
-
-    def v2_runner_item_on_ok(self, result: TaskResult):
-        return
-        super().v2_runner_item_on_ok(result)
-        task: Task = result._task
-        # host: Host = result._host
-        result: dict = result._result
-
-        
-        path = task.get_vars().get("journal_path")
-        if path is not None:
-            with open(path, "a") as file:
-                file.write(repr(result) + "\n")
