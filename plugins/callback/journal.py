@@ -49,7 +49,8 @@ class CallbackModule(CallbackBase):
                         "module_args" not in invocation
                         or "path" not in invocation["module_args"]
                     ):
-                        file.write(f"!{task.action}: path argument missing\n")
+                        name = task.get_name().replace("\n", "\\n")
+                        file.write(f"!{name}: path argument missing\n")
                         continue
 
                     args = invocation["module_args"]
@@ -57,5 +58,13 @@ class CallbackModule(CallbackBase):
                         file.write(args["path"] + "\n")
 
     def v2_runner_on_failed(self, result, ignore_errors=False):
-        # TODO: write errors to file so cleanup may be halted
-        pass
+        super().v2_runner_on_ok(result)
+        task: Task = result._task
+        # host: Host = result._host
+        result: dict = result._result
+
+        path = task.get_vars().get("journal_path")
+        if path is not None:
+            with open(path, "a") as file:
+                name = task.get_name().replace("\n", "\\n")
+                file.write(f"!{name}: failed\n")
