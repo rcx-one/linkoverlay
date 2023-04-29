@@ -11,16 +11,14 @@ import os
 from os import path as osp
 from datetime import datetime
 import shutil
+from typing import List, Dict
 
 try:
     from ansible.module_utils.linkoverlay import Tree
-    from ansible.module_utils import linkoverlay as lo
+    from ansible.module_utils import linkoverlay as util
 except ImportError:
-    try:
-        from module_utils.linkoverlay import Tree
-        from module_utils import linkoverlay as lo
-    except ImportError:
-        pass
+    from ..module_utils.linkoverlay import Tree
+    from ..module_utils import linkoverlay as util
 
 MODULE_ARGS = {
     "base_dir": {
@@ -82,7 +80,10 @@ MODULE_ARGS = {
 
             "If conflict is not set to C(replace), this has no effect.",
 
-            "If not set, no backups will be made."
+            "If not set, no backups will be made.",
+
+            "This path will be postfixed with the current timestamp to avoid "
+            + "overwriting existing backups."
         ],
         "type": "path",
         "required": False,
@@ -106,10 +107,10 @@ MODULE_ARGS = {
 }
 
 
-def main():
-    result = {"changed": False}
-
-    module = AnsibleModule(
+def setup_module():
+    """Creates an AnsibleModule instance from MODULE_ARGS.
+    """
+    return AnsibleModule(
         argument_spec={
             argument: {
                 key: val
@@ -121,64 +122,56 @@ def main():
         supports_check_mode=True
     )
 
+
+def validate_params(module: AnsibleModule, result: Dict):
+    """Checks if paths exist and are not nested in unexpected ways.
+    """
     base_dir = module.params["base_dir"]
     overlay_dir = module.params["overlay_dir"]
     backup_dir = module.params["backup_dir"]
 
-    if backup_dir:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        backup_dir = osp.join(backup_dir, timestamp)
-
-    collapse = module.params["collapse"]
-    replace = module.params["conflict"] == "replace"
-    relative_links = module.params["relative_links"]
-
-    if not lo.isdir(base_dir):
+    if not util.isdir(base_dir):
         module.fail_json(
             msg="base_dir has to exist and be a directory", **result
         )
 
-    if not lo.isdir(overlay_dir):
+    if not util.isdir(overlay_dir):
         module.fail_json(
             msg="overlay_dir has to exist and be a directory", **result
         )
 
     if (
         osp.samefile(base_dir, overlay_dir)
-        or lo.is_inside(base_dir, overlay_dir)
+        or util.is_inside(base_dir, overlay_dir)
     ):
         module.fail_json(
             msg="base_dir must not be (inside) overlay_dir", **result
         )
 
-    if backup_dir and lo.exists(backup_dir) and not lo.isdir(backup_dir):
+    if backup_dir and util.exists(backup_dir) and not util.isdir(backup_dir):
         module.fail_json(
             msg="backup_dir has to be a directory", **result
         )
 
     if (
         backup_dir
-        and lo.exists(backup_dir)
+        and util.exists(backup_dir)
         and len(os.listdir(backup_dir)) > 0
     ):
         module.fail_json(
             msg="backup_dir must be empty", **result
         )
 
-    if backup_dir and lo.is_inside(backup_dir, overlay_dir):
+    if backup_dir and util.is_inside(backup_dir, overlay_dir):
         module.fail_json(
             msg="backup_dir must not be (inside) overlay_dir", **result
         )
 
-    try:
-        overlay = Tree.from_path(overlay_dir)
-        translation = overlay.translate(overlay_dir, base_dir)
-    except PermissionError as error:
-        module.fail_json(msg=f"Error occured: {str(error)}", **result)
 
-    def mark_symlinked(tree: Tree) -> bool:
-        """Marks trees if one of their parents is a symlink
-        """
+def mark_symlinked(translation: Tree):
+    """Marks children if one of their parents is a symlink
+    """
+    def impl(tree: Tree) -> bool:
         tree.set_prop("symlinked", False)
         if osp.islink(tree):
             tree.apply_children(lambda t: t.set_prop("symlinked", True))
@@ -186,15 +179,19 @@ def main():
         else:
             return True  # Recurse into children
 
-    def mark_overlaid(tree: Tree) -> bool:
-        """Marks trees that are already linked to the correct overlay file
-        and adhere to the specified relative_links value.
-        """
+    translation.apply_children(impl, stopping=True)
+
+
+def mark_overlaid(translation: Tree, relative_links: bool):
+    """Marks trees that are already linked to the correct overlay file
+    and adhere to the specified relative_links value.
+    """
+    def impl(tree: Tree) -> bool:
         if tree.props["symlinked"]:
             tree.apply(lambda t: t.set_prop("overlaid", False))
             return False  # Stop recursing
-        elif lo.points_to(tree, tree.props["original_path"]):
-            tree.set_prop("overlaid", lo.is_relative_link(
+        elif util.points_to(tree, tree.props["original_path"]):
+            tree.set_prop("overlaid", util.is_relative_link(
                 tree) == relative_links)
             # Children have to be behind symlink -> consider them not overlaid
             tree.apply_children(lambda t: t.set_prop("overlaid", False))
@@ -203,41 +200,57 @@ def main():
             tree.set_prop("overlaid", False)
             return True  # Recurse into children
 
-    def mark_broken(tree: Tree):
-        """Marks symlinks that point to an incorrect overlay file.
-        """
+    translation.apply_children(impl, stopping=True)
+
+
+def mark_broken(translation: Tree, overlay: Tree):
+    """Marks symlinks that point to an incorrect overlay file.
+    """
+    def impl(tree: Tree):
         tree.set_prop(
             "broken", (
                 not tree.props["symlinked"]
-                and lo.points_into(tree, overlay)
+                and util.points_into(tree, overlay)
                 and not tree.props["overlaid"]
             )
         )
 
-    def mark_conflicting(tree: Tree):
-        """Marks trees that have to be removed to create a complete overlay.
-        """
+    translation.apply_children(impl)
+
+
+def mark_conflicting(translation: Tree):
+    """Marks trees that have to be removed to create a complete overlay.
+    """
+    def impl(tree: Tree):
         tree.set_prop(
             "conflicting",
             not tree.props["symlinked"]
-            and lo.exists(tree)
+            and util.exists(tree)
             and not tree.props["is_dir"]
             and not tree.props["overlaid"]
             and not tree.props["broken"]
         )
 
-    def mark_collapsed(tree: Tree):
-        """Marks directories that are already correctly linked.
-        """
+    translation.apply_children(impl)
+
+
+def mark_collapsed(translation: Tree):
+    """Marks directories that are already correctly linked.
+    """
+    def impl(tree: Tree):
         tree.set_prop(
             "collapsed",
             tree.props["is_dir"] and tree.props["overlaid"]
         )
 
-    def mark_collapsible(tree: Tree) -> bool:
-        """Marks directories that do not contain conflicting files and could
-        therefore be replaced by a symlink into the overlay.
-        """
+    translation.apply_children(impl)
+
+
+def mark_collapsible(translation: Tree, replace: bool, overlay: Tree):
+    """Marks directories that do not contain conflicting files and could
+    therefore be replaced by a symlink into the overlay.
+    """
+    def impl(tree: Tree) -> bool:
         collapsible = (
             not tree.props["symlinked"]
             and tree.props["is_dir"]
@@ -247,8 +260,8 @@ def main():
             def replaceable(dir_path, file_names):
                 paths = (osp.join(dir_path, name) for name in file_names)
                 return all(
-                    lo.isdir(path)
-                    or lo.points_into(path, overlay)
+                    util.isdir(path)
+                    or util.points_into(path, overlay)
                     or replace and tree.any(
                         lambda t: t.path == osp.abspath(path)
                     )
@@ -270,16 +283,20 @@ def main():
             tree.set_prop("collapsible", False)
             return True  # Recurse into children
 
-    def mark_removable(tree: Tree) -> bool:
-        """Marks trees that are allowed to be removed.
-        For linking to work, none of these files may remain in the base tree.
-        """
+    translation.apply_children(impl, stopping=True)
+
+
+def mark_removable(translation: Tree, collapse: bool, replace: bool):
+    """Marks trees that are allowed to be removed.
+    For linking to work, none of these files may remain in the base tree.
+    """
+    def impl(tree: Tree) -> bool:
         removable = (
             tree.props["broken"]
             or
             collapse
             and tree.props["collapsible"]
-            and lo.exists(tree)
+            and util.exists(tree)
             and not tree.props["collapsed"]
             or
             not collapse
@@ -296,11 +313,15 @@ def main():
             tree.set_prop("removable", False)
             return True  # Recurse into children
 
-    def mark_remove(tree: Tree) -> bool:
-        """Marks trees that will be recursively removed.
-        Children of removed trees are not marked, because they are implicitly
-        removed by their parents.
-        """
+    translation.apply_children(impl, stopping=True)
+
+
+def mark_remove(translation: Tree):
+    """Marks trees that will be recursively removed.
+    Children of removed trees are not marked, because they are implicitly
+    removed with their parents.
+    """
+    def impl(tree: Tree) -> bool:
         if tree.props["removable"]:
             tree.set_prop("remove", True)
             tree.apply_children(lambda t: t.set_prop("remove", False))
@@ -309,10 +330,14 @@ def main():
             tree.set_prop("remove", False)
             return True  # Recurse into children
 
-    def mark_link(tree: Tree) -> bool:
-        """Marks trees that are supposed to be linked to the overlay,
-        but are currently missing.
-        """
+    translation.apply_children(impl, stopping=True)
+
+
+def mark_link(translation: Tree, collapse: bool):
+    """Marks trees that are supposed to be linked to the overlay,
+    but are currently missing.
+    """
+    def impl(tree: Tree) -> bool:
         collapsible = tree.props["collapsible"]
         link = (
             not tree.props["symlinked"]
@@ -329,20 +354,24 @@ def main():
             tree.set_prop("link", False)
             return True  # Recurse into children
 
-    def mark_stat(tree: Tree) -> bool:
-        """Marks trees that need matching mode and owner.
-        """
+    translation.apply_children(impl, stopping=True)
+
+
+def mark_stat(translation: Tree):
+    """Marks trees that need matching mode and owner.
+    """
+    def impl(tree: Tree) -> bool:
         if tree.props["link"] or tree.props["overlaid"]:
             # Handle symlink stats
             matches = (
-                lo.exists(tree)
+                util.exists(tree)
                 and (
                     os.chmod not in os.supports_follow_symlinks
-                    or lo.equal_mode(tree.path, tree.props["original_path"])
+                    or util.equal_mode(tree.path, tree.props["original_path"])
                 )
                 and (
                     os.chown not in os.supports_follow_symlinks
-                    or lo.equal_owner(tree.path, tree.props["original_path"])
+                    or util.equal_owner(tree.path, tree.props["original_path"])
                 )
             )
             tree.set_prop(
@@ -355,9 +384,9 @@ def main():
         else:
             # Handle directory stats
             matches = (
-                lo.exists(tree)
-                and lo.equal_mode(tree.path, tree.props["original_path"])
-                and lo.equal_owner(tree.path, tree.props["original_path"])
+                util.exists(tree)
+                and util.equal_mode(tree.path, tree.props["original_path"])
+                and util.equal_owner(tree.path, tree.props["original_path"])
             )
             tree.set_prop(
                 "stat",
@@ -368,20 +397,13 @@ def main():
             )
             return True  # Recurse into children
 
-    # Mark tree properties
-    translation.apply_children(mark_symlinked, stopping=True)
-    translation.apply_children(mark_overlaid, stopping=True)
-    translation.apply_children(mark_broken)
-    translation.apply_children(mark_conflicting)
-    translation.apply_children(mark_collapsed)
-    translation.apply_children(mark_collapsible, stopping=True)
-    translation.apply_children(mark_removable, stopping=True)
+    translation.apply_children(impl, stopping=True)
 
-    # Mark planned actions
-    translation.apply_children(mark_remove, stopping=True)
-    translation.apply_children(mark_link, stopping=True)
-    translation.apply_children(mark_stat, stopping=True)
 
+def validate_conflicts(translation: Tree, module: AnsibleModule, result: Dict):
+    """Warns or fails for found conflicts depending on 'conflict' and
+    'warn_conflicts' settings.
+    """
     conflicting = translation.filter_children(lambda t: t.props["conflicting"])
     if conflicting and module.params["conflict"] == "error":
         module.fail_json(
@@ -396,15 +418,21 @@ def main():
         for tree in conflicting:
             module.warn(tree.path)
 
-    remove = translation.filter_children(lambda t: t.props["remove"])
+
+def update_result(
+    result: Dict,
+    base_dir: os.PathLike,
+    backup_dir: os.PathLike,
+    remove: List[Tree],
+    link: List[Tree],
+    stat: List[Tree],
+):
+    """Adds lists of removed and newly linked paths as well as file/dir stat
+    changes.
+    """
     result["removed_trees"] = [tree.path for tree in remove]
-
-    link = translation.filter_children(lambda t: t.props["link"])
     result["created_links"] = [tree.path for tree in link]
-
-    stat = translation.filter_children(lambda t: t.props["stat"])
     result["changed_stats"] = [tree.path for tree in stat]
-
     result["changed"] = not (len(remove) == len(link) == len(stat) == 0)
 
     if backup_dir:
@@ -415,10 +443,15 @@ def main():
         ]
         result["backed_up"] = backup_list
 
-    if module.check_mode:
-        module.exit_json(**result)
 
-    for tree in remove:  # type: Tree
+def remove_trees(
+        remove: List[Tree],
+        base_dir: os.PathLike,
+        backup_dir: os.PathLike
+):
+    """Removes paths listed in `remove`.
+    """
+    for tree in remove:
         if tree.props["conflicting"] and backup_dir:
             backup_path = tree.translate_path(base_dir, backup_dir)
             os.makedirs(osp.dirname(backup_path), exist_ok=True)
@@ -440,14 +473,24 @@ def main():
         else:
             shutil.rmtree(tree)
 
-    for tree in link:  # type: Tree
+
+def create_links(link: List[Tree], relative_links: bool):
+    """Creates symlinks specified in `link`.
+    The links are relative or absolute depending on `relative_links`.
+    """
+    for tree in link:
         os.makedirs(osp.dirname(tree), exist_ok=True)
         target = tree.props["original_path"]
         if relative_links:
             target = osp.relpath(target, osp.dirname(tree))
         os.symlink(target, tree)
 
-    for tree in stat:  # type: Tree
+
+def change_stats(stat: List[Tree]):
+    """Changes stats of files specified in `stat` to those of their overlay
+    counter parts.
+    """
+    for tree in stat:
         stat = os.stat(tree.props["original_path"], follow_symlinks=False)
         if not osp.islink(tree):
             os.chmod(tree, stat.st_mode)
@@ -457,6 +500,76 @@ def main():
                 os.chmod(tree, stat.st_mode, follow_symlinks=False)
             if os.chown in os.supports_follow_symlinks:
                 os.chown(tree, stat.st_uid, stat.st_gid, follow_symlinks=False)
+
+
+def main():
+    result = {"changed": False}
+
+    module = setup_module()
+
+    # Postfix backup path with current timestamp
+    if module.params["backup_dir"]:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        module.params["backup_dir"] = osp.join(
+            module.params["backup_dir"],
+            timestamp
+        )
+
+    # Handle parameters
+    validate_params(module, result)
+
+    base_dir = module.params["base_dir"]
+    overlay_dir = module.params["overlay_dir"]
+    backup_dir = module.params["backup_dir"]
+
+    collapse = module.params["collapse"]
+    replace = module.params["conflict"] == "replace"
+    relative_links = module.params["relative_links"]
+
+    # Find directory tree of interest
+    try:
+        overlay = Tree.from_path(overlay_dir)
+        translation = overlay.translate(overlay_dir, base_dir)
+    except PermissionError as error:
+        module.fail_json(msg=f"Error occured: {str(error)}", **result)
+
+    # Mark tree properties
+    mark_symlinked(translation)
+    mark_overlaid(translation, relative_links=relative_links)
+    mark_broken(translation, overlay=overlay)
+    mark_conflicting(translation)
+    mark_collapsed(translation)
+    mark_collapsible(translation, replace=replace, overlay=overlay)
+    mark_removable(translation, collapse=collapse, replace=replace)
+
+    # Mark planned actions
+    mark_remove(translation)
+    mark_link(translation, collapse)
+    mark_stat(translation)
+
+    # Validate and report planned actions
+    validate_conflicts(translation=translation, module=module, result=result)
+
+    remove = translation.filter_children(lambda t: t.props["remove"])
+    link = translation.filter_children(lambda t: t.props["link"])
+    stat = translation.filter_children(lambda t: t.props["stat"])
+
+    update_result(
+        result=result,
+        base_dir=base_dir,
+        backup_dir=backup_dir,
+        remove=remove,
+        link=link,
+        stat=stat
+    )
+
+    if module.check_mode:
+        module.exit_json(**result)
+
+    # Execute planned actions
+    remove_trees(remove=remove, base_dir=base_dir, backup_dir=backup_dir)
+    create_links(link=link, relative_links=relative_links)
+    change_stats(stat=stat)
 
     module.exit_json(**result)
 
