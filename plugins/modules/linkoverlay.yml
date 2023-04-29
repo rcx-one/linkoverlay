@@ -63,7 +63,7 @@ DOCUMENTATION:
       required: false
       default: true
 EXAMPLES: "- name: Overlay dotfiles\n  rcx_one.linkoverlay.linkoverlay:\n    base_dir:\
-  \ \"~\"\n    overlay_dir: \"~/dotfiles\"\n    backup_dir: \"~/dotfile_backup\"\n\
+  \ /home/user/\n    overlay_dir: /home/user/dotfiles\n    backup_dir: /home/user/dotfile_backup\n\
   \    conflict: replace\n"
 RETURN:
   backed_up:

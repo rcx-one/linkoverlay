@@ -8,9 +8,9 @@ DOCUMENTATION:
 EXAMPLES: |
   - name: Overlay dotfiles
     rcx_one.linkoverlay.linkoverlay:
-      base_dir: "~"
-      overlay_dir: "~/dotfiles"
-      backup_dir: "~/dotfile_backup"
+      base_dir: /home/user/
+      overlay_dir: /home/user/dotfiles
+      backup_dir: /home/user/dotfile_backup
       conflict: replace
 
 RETURN:

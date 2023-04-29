@@ -16,7 +16,11 @@ try:
     from ansible.module_utils.linkoverlay import Tree
     from ansible.module_utils import linkoverlay as lo
 except ImportError:
-    pass
+    try:
+        from module_utils.linkoverlay import Tree
+        from module_utils import linkoverlay as lo
+    except ImportError:
+        pass
 
 MODULE_ARGS = {
     "base_dir": {
