@@ -6,6 +6,7 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+
 DOCUMENTATION = """
 module: clean
 short_description: Removed file from given path excluding a list of files
@@ -45,11 +46,10 @@ removed:
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from typing import List, Dict
+from typing import Set
 import os
 from os import path as osp
 from shutil import rmtree
-
 try:
     from ansible.module_utils import linkoverlay as util
 except ImportError:
@@ -69,20 +69,42 @@ MODULE_ARGS = {
 }
 
 
-def clean(path: os.PathLike, exclude: List[os.PathLike], result: Dict):
-    if path not in exclude:
-        matching = [ex for ex in exclude if not util.is_inside(ex, path)]
-        if not matching:
-            if osp.islink(path) or osp.isfile(path):
-                os.unlink(path)
-            else:
-                rmtree(path)
-            result["changed"] = True
-            result.setdefault("removed", []).append(path)
+def mark_excluded(tree: util.Tree, exclude: Set[str]):
+    """Marks trees that are excluded or contain excluded trees.
+    """
+    def impl(tree: util.Tree) -> bool:
+        if tree.path in exclude:
+            tree.apply(lambda t: t.set_prop("excluded", True))
+            return False  # Stop recursing
+        else:
+            tree.set_prop("excluded", False)
+            return True  # Recurse into children
 
-        elif util.isdir(path):
-            for entry in os.listdir(path):
-                clean(entry, matching, result)
+    tree.apply_children(impl, stopping=True)
+
+
+def mark_removable(tree: util.Tree):
+    """Marks trees that are not and do not contain excluded trees.
+    """
+    def impl(tree: util.Tree):
+        tree.set_prop("removable", not tree.any(lambda t: t.props["excluded"]))
+
+    tree.apply_children(impl, stopping=False)
+
+
+def mark_remove(tree: util.Tree):
+    """Marks roots of subtrees that can be recursively removed.
+    """
+    def impl(tree: util.Tree) -> bool:
+        if tree.props["removable"]:
+            tree.set_prop("remove", True)
+            tree.apply_children(lambda t: t.set_prop("remove", False))
+            return False  # Stop recursing
+        else:
+            tree.set_prop("remove", False)
+            return True  # Recurse into children
+
+    tree.apply_children(impl, stopping=True)
 
 
 def main():
@@ -94,10 +116,30 @@ def main():
     )
 
     path = module.params["path"]
-    exclude = module.params["exclude"]
+    exclude = set(module.params["exclude"])
 
-    for entry in os.listdir(path):
-        clean(entry, exclude, result)
+    # Build directory tree
+    tree = util.Tree.from_path(path)
+
+    # Mark tree properties
+    mark_excluded(tree, exclude)
+    mark_removable(tree)
+
+    # Mark planned removals
+    mark_remove(tree)
+
+    remove = tree.filter_children(lambda t: t.props["remove"])
+    result["removed"] = [tree.path for tree in remove]
+
+    if module.check_mode:
+        module.exit_json(**result)
+
+    # Remove marked trees
+    for tree in remove:
+        if osp.islink(tree) or osp.isfile(tree):
+            os.unlink(tree)
+        else:
+            rmtree(tree)
 
     module.exit_json(**result)
 
