@@ -45,15 +45,16 @@ removed:
     sample: ["/home/user/old_file"]
 """
 
-from ansible.module_utils.basic import AnsibleModule
-from typing import Set
-import os
-from os import path as osp
-from shutil import rmtree
+from ansible.module_utils.basic import AnsibleModule  # noqa: E402
+from typing import Set  # noqa: E402
+import os  # noqa: E402
+from os import path as osp  # noqa: E402
+from shutil import rmtree  # noqa: E402
 try:
-    from ansible.module_utils import linkoverlay as util
+    from ansible_collections.rcx_one.linkoverlay.plugins.module_utils.\
+        linkoverlay import Tree
 except ImportError:
-    from ..module_utils import linkoverlay as util
+    from ..module_utils.linkoverlay import Tree
 
 MODULE_ARGS = {
     "path": {
@@ -69,10 +70,10 @@ MODULE_ARGS = {
 }
 
 
-def mark_excluded(tree: util.Tree, exclude: Set[str]):
+def mark_excluded(tree: Tree, exclude: Set[str]):
     """Marks trees that are excluded or contain excluded trees.
     """
-    def impl(tree: util.Tree) -> bool:
+    def impl(tree: Tree) -> bool:
         if tree.path in exclude:
             tree.apply(lambda t: t.set_prop("excluded", True))
             return False  # Stop recursing
@@ -83,19 +84,19 @@ def mark_excluded(tree: util.Tree, exclude: Set[str]):
     tree.apply_children(impl, stopping=True)
 
 
-def mark_removable(tree: util.Tree):
+def mark_removable(tree: Tree):
     """Marks trees that are not and do not contain excluded trees.
     """
-    def impl(tree: util.Tree):
+    def impl(tree: Tree):
         tree.set_prop("removable", not tree.any(lambda t: t.props["excluded"]))
 
     tree.apply_children(impl, stopping=False)
 
 
-def mark_remove(tree: util.Tree):
+def mark_remove(tree: Tree):
     """Marks roots of subtrees that can be recursively removed.
     """
-    def impl(tree: util.Tree) -> bool:
+    def impl(tree: Tree) -> bool:
         if tree.props["removable"]:
             tree.set_prop("remove", True)
             tree.apply_children(lambda t: t.set_prop("remove", False))
@@ -119,7 +120,7 @@ def main():
     exclude = set(module.params["exclude"])
 
     # Build directory tree
-    tree = util.Tree.from_path(path)
+    tree = Tree.from_path(path)
 
     # Mark tree properties
     mark_excluded(tree, exclude)

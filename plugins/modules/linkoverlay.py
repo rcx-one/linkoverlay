@@ -14,8 +14,10 @@ import shutil
 from typing import List, Dict
 
 try:
-    from ansible.module_utils.linkoverlay import Tree
-    from ansible.module_utils import linkoverlay as util
+    from ansible_collections.rcx_one.linkoverlay.plugins.module_utils.\
+        linkoverlay import Tree
+    import ansible_collections.rcx_one.linkoverlay.plugins.module_utils.\
+        linkoverlay as util
 except ImportError:
     from ..module_utils.linkoverlay import Tree
     from ..module_utils import linkoverlay as util
