@@ -1,0 +1,139 @@
+- name: Create temporary directory
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: linkoverlay_test
+  register: temp_dir
+
+- name: Create base directory
+  ansible.builtin.file:
+    state: directory
+    path: "{{ temp_dir.path }}/base.d"
+  register: base_dir
+
+- name: Create overlay directory
+  ansible.builtin.file:
+    state: directory
+    path: "{{ temp_dir.path }}/overlay.d"
+  register: overlay_dir
+
+- name: Create backup directory
+  ansible.builtin.file:
+    state: directory
+    path: "{{ temp_dir.path }}/backup.d"
+  register: backup_dir
+
+
+- name: Create base subdirectories
+  ansible.builtin.file:
+    state: directory
+    path: "{{ base_dir.path }}/{{ item }}"
+  loop:
+    - empty.d
+    - linked_absolute.d
+    - linked_relative.d
+    - collapsible.d
+    - collapsible.d/empty.d
+    - filled.d
+    - unrelated.d
+
+- name: Create overlay subdirectories
+  ansible.builtin.file:
+    state: directory
+    path: "{{ overlay_dir.path }}/{{ item }}"
+  loop:
+    - empty.d
+    - linked_absolute.d
+    - linked_relative.d
+    - collapsible.d
+    - collapsed_absolute.d
+    - collapsed_relative.d
+    - filled.d
+    - missing.d
+
+
+- name: Create base files
+  ansible.builtin.file:
+    state: touch
+    path: "{{ base_dir.path }}/{{ item }}"
+  loop:
+    - unrelated.f
+    - conflict.f
+    - filled.d/conflict.f
+    - filled.d/unrelated.f
+
+- name: Create overlay files
+  ansible.builtin.file:
+    state: touch
+    path: "{{ overlay_dir.path }}/{{ item }}"
+  loop:
+    - missing.f
+    - conflict.f
+    - conflict_link.f
+    - empty.d/missing.f
+    - linked_absolute.d/linked.f
+    - linked_relative.d/linked.f
+    - collapsible.d/missing.f
+    - collapsed_absolute.d/missing.f
+    - collapsed_relative.d/missing.f
+    - filled.d/conflict.f
+    - filled.d/linked.f
+    - filled.d/missing.f
+    - filled.d/moved.f
+    - missing.d/missing.f
+
+
+- name: Create links
+  ansible.builtin.file:
+    state: link
+    path: "{{ base_dir.path }}/{{ item.path }}"
+    src: "{{ item.src }}"
+    force: true
+    follow: false
+  loop:
+    - path: conflict_link.f
+      src: unrelated.f
+    - path: linked_absolute.d/linked.f
+      src: "{{ overlay_dir.path }}/linked_absolute.d/linked.f"
+    - path: linked_absolute.d/broken.l
+      src: "{{ overlay_dir.path }}/linked_absolute.d/broken.l"
+    - path: linked_relative.d/linked.f
+      src: ../../overlay.d/linked_relative.d/linked.f
+    - path: linked_relative.d/broken.l
+      src: ../../overlay.d/linked_relative.d/broken.l
+    - path: collapsible.d/broken.l
+      src: ../../overlay.d/collapsible.d/broken.l
+    - path: collapsed_absolute.d
+      src: "{{ overlay_dir.path }}/collapsed_absolute.d"
+    - path: collapsed_relateive.d
+      src: ../overlay.d/collapsed_absolute.d
+    - path: filled.d/linked.f
+      src: ../../overlay.d/filled.d/linked.f
+    - path: filled.d/unrelated.f
+      src: ../unrelated.f
+    - path: filled.d/moved.f
+      src: ../../overlay.d/moved.f
+
+
+- name: Before file list
+  ansible.builtin.find:
+    paths: "{{ temp_dir.path }}"
+    recurse: yes
+  register: before
+- name: Test check mode
+  rcx_one.linkoverlay.linkoverlay:
+    base_dir: "{{ base_dir.path }}"
+    overlay_dir: "{{ overlay_dir.path }}"
+    backup_dir: "{{ backup_dir.path }}"
+    conflict: replace
+  check_mode: true
+  register: result
+- name: After file list
+  ansible.builtin.find:
+    paths: "{{ temp_dir.path }}"
+    recurse: yes
+  register: after
+- name: Check result
+  ansible.builtin.assert:
+    that:
+      - result is changed
+      - before.files == after.files

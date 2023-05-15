@@ -194,8 +194,10 @@ class Tree():
         """
         if (
             osp.isabs(self.path) != osp.isabs(old_base)
-            or not (old_base == self.path
-                    and osp.commonpath([old_base, self.path]))
+            or not (
+                old_base == self.path
+                or osp.commonpath([old_base, self.path])
+            )
         ):
             raise AssertionError()
         return osp.join(new_base, osp.relpath(self.path, old_base))
