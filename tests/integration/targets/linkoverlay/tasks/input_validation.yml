@@ -1,0 +1,39 @@
+- name: Fail because base does not exist
+  rcx_one.linkoverlay.linkoverlay:
+    base_dir: "{{ temp_dir.path }}/idontexist"
+    overlay_dir: "{{ overlay_dir.path }}"
+  ignore_errors: true
+  register: result_1
+
+- name: Fail because overlay does not exist
+  rcx_one.linkoverlay.linkoverlay:
+    base_dir: "{{ base_dir.path }}"
+    overlay_dir: "{{ temp_dir.path }}/idontexist"
+  ignore_errors: true
+  register: result_2
+
+- name: Fail because overlay == base
+  rcx_one.linkoverlay.linkoverlay:
+    base_dir: "{{ overlay_dir.path }}"
+    overlay_dir: "{{ overlay_dir.path }}"
+  ignore_errors: true
+  register: result_3
+
+- name: Fail because overlay/[...]/base
+  rcx_one.linkoverlay.linkoverlay:
+    base_dir: "{{ overlay_dir.path }}/empty.d"
+    overlay_dir: "{{ overlay_dir.path }}"
+  ignore_errors: true
+  register: result_4
+
+- name: Check results
+  ansible.builtin.assert:
+    that:
+      - result_1 is failed
+      - result_1 is not changed
+      - result_2 is failed
+      - result_2 is not changed
+      - result_3 is failed
+      - result_3 is not changed
+      - result_4 is failed
+      - result_4 is not changed

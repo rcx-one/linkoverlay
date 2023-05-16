@@ -1,0 +1,110 @@
+- name: Create base directory
+  ansible.builtin.file:
+    state: directory
+    path: "{{ root_dir }}/base.d"
+  register: base_dir
+
+- name: Create overlay directory
+  ansible.builtin.file:
+    state: directory
+    path: "{{ root_dir }}/overlay.d"
+  register: overlay_dir
+
+- name: Create backup directory
+  ansible.builtin.file:
+    state: directory
+    path: "{{ root_dir }}/backup.d"
+  register: backup_dir
+
+
+- name: Create base subdirectories
+  ansible.builtin.file:
+    state: directory
+    path: "{{ base_dir.path }}/{{ item }}"
+  loop:
+    - empty.d
+    - linked_absolute.d
+    - linked_relative.d
+    - collapsible.d
+    - collapsible.d/empty.d
+    - filled.d
+    - unrelated.d
+  register: base_subdirs
+
+- name: Create overlay subdirectories
+  ansible.builtin.file:
+    state: directory
+    path: "{{ overlay_dir.path }}/{{ item }}"
+  loop:
+    - empty.d
+    - linked_absolute.d
+    - linked_relative.d
+    - collapsible.d
+    - collapsed_absolute.d
+    - collapsed_relative.d
+    - filled.d
+    - missing.d
+  register: overlay_subdirs
+
+- name: Create base files
+  ansible.builtin.file:
+    state: touch
+    path: "{{ base_dir.path }}/{{ item }}"
+  loop:
+    - unrelated.f
+    - conflict.f
+    - filled.d/conflict.f
+    - filled.d/unrelated.f
+  register: base_files
+
+- name: Create overlay files
+  ansible.builtin.file:
+    state: touch
+    path: "{{ overlay_dir.path }}/{{ item }}"
+  loop:
+    - missing.f
+    - conflict.f
+    - conflict_link.f
+    - empty.d/missing.f
+    - linked_absolute.d/linked.f
+    - linked_relative.d/linked.f
+    - collapsible.d/missing.f
+    - collapsed_absolute.d/missing.f
+    - collapsed_relative.d/missing.f
+    - filled.d/conflict.f
+    - filled.d/linked.f
+    - filled.d/missing.f
+    - filled.d/moved.f
+    - missing.d/missing.f
+  register: overlay_files
+
+- name: Create links
+  ansible.builtin.file:
+    state: link
+    path: "{{ base_dir.path }}/{{ item.path }}"
+    src: "{{ item.src }}"
+    force: true
+    follow: false
+  loop:
+    - path: conflict_link.f
+      src: unrelated.f
+    - path: linked_absolute.d/linked.f
+      src: "{{ overlay_dir.path }}/linked_absolute.d/linked.f"
+    - path: linked_absolute.d/broken.l
+      src: "{{ overlay_dir.path }}/linked_absolute.d/broken.l"
+    - path: linked_relative.d/linked.f
+      src: ../../overlay.d/linked_relative.d/linked.f
+    - path: linked_relative.d/broken.l
+      src: ../../overlay.d/linked_relative.d/broken.l
+    - path: collapsible.d/broken.l
+      src: ../../overlay.d/collapsible.d/broken.l
+    - path: collapsed_absolute.d
+      src: "{{ overlay_dir.path }}/collapsed_absolute.d"
+    - path: collapsed_relative.d
+      src: ../overlay.d/collapsed_relative.d
+    - path: filled.d/linked.f
+      src: ../../overlay.d/filled.d/linked.f
+    - path: filled.d/unrelated.f
+      src: ../unrelated.f
+    - path: filled.d/moved.f
+      src: ../../overlay.d/moved.f

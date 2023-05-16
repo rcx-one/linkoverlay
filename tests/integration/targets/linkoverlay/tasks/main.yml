@@ -1,211 +1,104 @@
-- name: Setup test directory
-  block:
-  - name: Create temporary directory
-    ansible.builtin.tempfile:
-      state: directory
-      suffix: .linkoverlay_test
-    register: temp_dir
+- name: Create temporary directory
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: .linkoverlay_test
+  register: temp_dir
 
-  - name: Create base directory
-    ansible.builtin.file:
-      state: directory
-      path: "{{ temp_dir.path }}/base.d"
-    register: base_dir
-
-  - name: Create overlay directory
-    ansible.builtin.file:
-      state: directory
-      path: "{{ temp_dir.path }}/overlay.d"
-    register: overlay_dir
-
-  - name: Create backup directory
-    ansible.builtin.file:
-      state: directory
-      path: "{{ temp_dir.path }}/backup.d"
-    register: backup_dir
+- name: Populate directory
+  ansible.builtin.include_tasks:
+    file: populate.yml
+  vars:
+    root_dir: "{{ temp_dir.path }}"
 
 
-  - name: Create base subdirectories
-    ansible.builtin.file:
-      state: directory
-      path: "{{ base_dir.path }}/{{ item }}"
-    loop:
-      - empty.d
-      - linked_absolute.d
-      - linked_relative.d
-      - collapsible.d
-      - collapsible.d/empty.d
-      - filled.d
-      - unrelated.d
-
-  - name: Create overlay subdirectories
-    ansible.builtin.file:
-      state: directory
-      path: "{{ overlay_dir.path }}/{{ item }}"
-    loop:
-      - empty.d
-      - linked_absolute.d
-      - linked_relative.d
-      - collapsible.d
-      - collapsed_absolute.d
-      - collapsed_relative.d
-      - filled.d
-      - missing.d
+- name: Input validation tests
+  ansible.builtin.include_tasks:
+    file: input_validation.yml
 
 
-  - name: Create base files
-    ansible.builtin.file:
-      state: touch
-      path: "{{ base_dir.path }}/{{ item }}"
-    loop:
-      - unrelated.f
-      - conflict.f
-      - filled.d/conflict.f
-      - filled.d/unrelated.f
+# Check mode tests
+- name: Before check mode file list
+  ansible.builtin.find:
+    paths: "{{ temp_dir.path }}"
+    recurse: yes
+    file_type: any
+  register: before_checkmode
 
-  - name: Create overlay files
-    ansible.builtin.file:
-      state: touch
-      path: "{{ overlay_dir.path }}/{{ item }}"
-    loop:
-      - missing.f
-      - conflict.f
-      - conflict_link.f
-      - empty.d/missing.f
-      - linked_absolute.d/linked.f
-      - linked_relative.d/linked.f
-      - collapsible.d/missing.f
-      - collapsed_absolute.d/missing.f
-      - collapsed_relative.d/missing.f
-      - filled.d/conflict.f
-      - filled.d/linked.f
-      - filled.d/missing.f
-      - filled.d/moved.f
-      - missing.d/missing.f
-
-
-  - name: Create links
-    ansible.builtin.file:
-      state: link
-      path: "{{ base_dir.path }}/{{ item.path }}"
-      src: "{{ item.src }}"
-      force: true
-      follow: false
-    loop:
-      - path: conflict_link.f
-        src: unrelated.f
-      - path: linked_absolute.d/linked.f
-        src: "{{ overlay_dir.path }}/linked_absolute.d/linked.f"
-      - path: linked_absolute.d/broken.l
-        src: "{{ overlay_dir.path }}/linked_absolute.d/broken.l"
-      - path: linked_relative.d/linked.f
-        src: ../../overlay.d/linked_relative.d/linked.f
-      - path: linked_relative.d/broken.l
-        src: ../../overlay.d/linked_relative.d/broken.l
-      - path: collapsible.d/broken.l
-        src: ../../overlay.d/collapsible.d/broken.l
-      - path: collapsed_absolute.d
-        src: "{{ overlay_dir.path }}/collapsed_absolute.d"
-      - path: collapsed_relateive.d
-        src: ../overlay.d/collapsed_absolute.d
-      - path: filled.d/linked.f
-        src: ../../overlay.d/filled.d/linked.f
-      - path: filled.d/unrelated.f
-        src: ../unrelated.f
-      - path: filled.d/moved.f
-        src: ../../overlay.d/moved.f
-
-
-# Test fails because of base_dir and overlay_dir -----
-- name: Fail because base does not exist
-  rcx_one.linkoverlay.linkoverlay:
-    base_dir: "{{ temp_dir.path }}/idontexist"
-    overlay_dir: "{{ overlay_dir.path }}"
-  ignore_errors: true
-  register: fail_result
-
-- name: Check base does not exist
-  ansible.builtin.assert:
-    that:
-      - fail_result is failed
-      - fail_result is not changed
-
-
-- name: Fail because overlay does not exist
+- name: Overlay in check mode, keep conflicts, no collapse
   rcx_one.linkoverlay.linkoverlay:
     base_dir: "{{ base_dir.path }}"
-    overlay_dir: "{{ temp_dir.path }}/idontexist"
-  ignore_errors: true
-  register: fail_result
-
-- name: Check overlay does not exist
-  ansible.builtin.assert:
-    that:
-      - fail_result is failed
-      - fail_result is not changed
-
-
-- name: Fail because overlay == base
-  rcx_one.linkoverlay.linkoverlay:
-    base_dir: "{{ overlay_dir.path }}"
     overlay_dir: "{{ overlay_dir.path }}"
-  ignore_errors: true
-  register: fail_result
+    backup_dir: "{{ backup_dir.path }}"
+    conflict: keep
+    warn_conflict: true
+    collapse: false
+  check_mode: true
+  register: overlay_check_keep_nocollapse
 
-- name: Check overlay == base
-  ansible.builtin.assert:
-    that:
-      - fail_result is failed
-      - fail_result is not changed
-
-
-- name: Fail because overlay/<...>/base
+- name: Overlay in check mode, keep conflicts, collapse
   rcx_one.linkoverlay.linkoverlay:
-    base_dir: "{{ overlay_dir.path }}/empty.d"
+    base_dir: "{{ base_dir.path }}"
     overlay_dir: "{{ overlay_dir.path }}"
-  ignore_errors: true
-  register: fail_result
+    backup_dir: "{{ backup_dir.path }}"
+    conflict: keep
+    warn_conflict: true
+    collapse: true
+  check_mode: true
+  register: overlay_check_keep_collapse
 
-- name: Check overlay/<...>/base
+- name: Overlay in check mode, replace conflicts, no collapse
+  rcx_one.linkoverlay.linkoverlay:
+    base_dir: "{{ base_dir.path }}"
+    overlay_dir: "{{ overlay_dir.path }}"
+    backup_dir: "{{ backup_dir.path }}"
+    conflict: replace
+    warn_conflict: true
+    collapse: false
+  check_mode: true
+  register: overlay_check_replace_nocollapse
+
+- name: Overlay in check mode, replace conflicts, collapse
+  rcx_one.linkoverlay.linkoverlay:
+    base_dir: "{{ base_dir.path }}"
+    overlay_dir: "{{ overlay_dir.path }}"
+    backup_dir: "{{ backup_dir.path }}"
+    conflict: replace
+    warn_conflict: true
+    collapse: true
+  check_mode: true
+  register: overlay_check_replace_collapse
+
+- name: File list after check mode
+  ansible.builtin.find:
+    paths: "{{ temp_dir.path }}"
+    recurse: yes
+    file_type: any
+  register: after_checkmode
+
+- name: Check results from checkmode tests
   ansible.builtin.assert:
     that:
-      - fail_result is failed
-      - fail_result is not changed
-
-# Test cases without modification -----
-- name: Test check mode
-  block:
-  - name: Before check mode file list
-    ansible.builtin.find:
-      paths: "{{ temp_dir.path }}"
-      recurse: yes
-      file_type: any
-    register: before
-
-  - name: Overlay in check mode
-    rcx_one.linkoverlay.linkoverlay:
-      base_dir: "{{ base_dir.path }}"
-      overlay_dir: "{{ overlay_dir.path }}"
-      backup_dir: "{{ backup_dir.path }}"
-      conflict: keep
-      warn_conflict: true
-      collapse: false
-    check_mode: true
-    register: check_result
-
-  - name: File list after check mode
-    ansible.builtin.find:
-      paths: "{{ temp_dir.path }}"
-      recurse: yes
-      file_type: any
-    register: after
-
-  - name: Checkmode tests
-    ansible.builtin.assert:
-      that:
-        - check_result is changed
-        - check_result.warnings | length > 0
-        - 'before.files | combine({"atime": 0}) == after.files | combine({"atime": 0})'
+      - overlay_check_keep_nocollapse is changed
+      - overlay_check_keep_nocollapse.warnings | length > 0
+      - overlay_check_keep_nocollapse.backed_up | length == 0
+      - overlay_check_keep_nocollapse.created_links | length == 9
+      - overlay_check_keep_nocollapse.removed_trees | length == 4
+      - overlay_check_keep_collapse is changed
+      - overlay_check_keep_collapse.warnings | length > 0
+      - overlay_check_keep_collapse.backed_up | length == 0
+      - overlay_check_keep_collapse.created_links | length == 9
+      - overlay_check_keep_collapse.removed_trees | length == 6
+      - overlay_check_replace_nocollapse is changed
+      - overlay_check_replace_nocollapse.warnings | length > 0
+      - overlay_check_replace_nocollapse.backed_up | length == 3
+      - overlay_check_replace_nocollapse.created_links | length == 12
+      - overlay_check_replace_nocollapse.removed_trees | length == 7
+      - overlay_check_replace_collapse is changed
+      - overlay_check_replace_collapse.warnings | length > 0
+      - overlay_check_replace_collapse.backed_up | length == 3
+      - overlay_check_replace_collapse.created_links | length == 12
+      - overlay_check_replace_collapse.removed_trees | length == 9
+      - '(before_checkmode.files | combine({"atime": 0})) == (after_checkmode.files | combine({"atime": 0}))'
 
 
 - name: Test failing on conflicts
@@ -226,41 +119,11 @@
       paths: "{{ temp_dir.path }}"
       recurse: yes
       file_type: any
-    register: after
+    register: after_conflict_fail
 
-  - name: Fail tests
+  - name: Check failing on conflicts result
     ansible.builtin.assert:
       that:
         - fail_result is failed
         - fail_result is not changed
-        - 'before.files | combine({"atime": 0}) == after.files | combine({"atime": 0})'
-
-
-# Test cases with modification -----
-- name: Overlay without collapse or replace
-  rcx_one.linkoverlay.linkoverlay:
-    base_dir: "{{ base_dir.path }}"
-    overlay_dir: "{{ overlay_dir.path }}"
-    backup_dir: "{{ backup_dir.path }}"
-    conflict: keep
-    warn_conflict: true
-    collapse: false
-  register: execute_result
-
-- name: File list after execute without replacing or collapsing
-  ansible.builtin.find:
-    paths: "{{ temp_dir.path }}"
-    recurse: yes
-    file_type: any
-  register: after
-
-- name: Check overlay without collapse or replace
-  ansible.builtin.assert:
-    that:
-      - execute_result.changed_stats == check_result.changed_stats
-      - execute_result.created_links == check_result.created_links
-      - execute_result.removed_trees == check_result.removed_trees
-      - execute_result is changed
-      - execute_result.warnings | length > 0
-      - execute_result.backed_up | length == 0
-      - 'before.files | combine({"atime": 0}) != after.files | combine({"atime": 0})'
+        - '(before_checkmode.files | combine({"atime": 0})) == (after_conflict_fail.files | combine({"atime": 0}))'
