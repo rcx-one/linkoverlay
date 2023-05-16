@@ -58,13 +58,14 @@ class CallbackModule(CallbackBase):
                         file.write(args["path"] + "\n")
 
     def v2_runner_on_failed(self, result, ignore_errors=False):
-        super().v2_runner_on_ok(result)
-        task: Task = result._task
-        # host: Host = result._host
-        result: dict = result._result
+        super().v2_runner_on_failed(result, ignore_errors=ignore_errors)
+        if not ignore_errors:
+            task: Task = result._task
+            # host: Host = result._host
+            result: dict = result._result
 
-        path = task.get_vars().get("journal_path")
-        if path is not None:
-            with open(path, "a") as file:
-                name = task.get_name().replace("\n", "\\n")
-                file.write(f"!{name}: failed\n")
+            path = task.get_vars().get("journal_path")
+            if path is not None:
+                with open(path, "a") as file:
+                    name = task.get_name().replace("\n", "\\n")
+                    file.write(f"!{name}: failed\n")
