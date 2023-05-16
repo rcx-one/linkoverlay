@@ -1,2 +1,10 @@
 ---
-# tasks file for journal
+- name: Add touched path to journal for single result
+  ansible.builtin.lineinfile:
+    path: "{{ journal_path }}"
+    line: "{{ result.invocation.module_args.path }}"
+  ignore_errors: true
+  register: 
+  when: result is not contains('results')
+
+- name: Add errors to journal
