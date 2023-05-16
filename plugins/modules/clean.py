@@ -23,7 +23,7 @@ options:
     type: path
     required: true
   exclude:
-    description: The list of paths not to be removed.
+    description: The lines of the journal of files to keep.
     type: list
     elements: str
     required: false
@@ -120,6 +120,15 @@ def main():
     path = module.params["path"]
     exclude = set(module.params["exclude"])
 
+    errors = [
+        f"line {i + 1}: {line}"
+        for i, line in enumerate(exclude)
+        if line.startswith("!")
+    ]
+    if errors:
+        message = "\n".join(errors)
+        module.fail_json(msg=f"Journal contains errors:\n{message}")
+
     # Build directory tree
     tree = Tree.from_path(path)
 
@@ -132,6 +141,7 @@ def main():
 
     remove = tree.filter_children(lambda t: t.props["remove"])
     result["removed"] = [tree.path for tree in remove]
+    result["changed"] = len(remove) > 0
 
     if module.check_mode:
         module.exit_json(**result)
