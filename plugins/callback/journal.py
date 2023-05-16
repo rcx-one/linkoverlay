@@ -13,7 +13,7 @@ DOCUMENTATION = """
     name: journal
     type: notification
     short_description: logs files created by tasks to a list in a file
-    version_added: "1.0.0"
+    version_added: "0.1.0"
     description:
         - "Whenever a task has a variable 'journal_path: <path-to-file>', "
         - "paths kept present by that task are appended to the given file."
@@ -21,7 +21,7 @@ DOCUMENTATION = """
 
 
 class CallbackModule(CallbackBase):
-    CALLBACK_VERSION = 1.0
+    CALLBACK_VERSION = 0.1
     CALLBACK_TYPE = "notification"
     CALLBACK_NAME = "rcx_one.linkoverlay.journal"
     CALLBACK_NEEDS_ENABLED = False

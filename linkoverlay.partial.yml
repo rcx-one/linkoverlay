@@ -2,7 +2,7 @@ DOCUMENTATION:
   module: linkoverlay
   short_description: Overlay a directory tree onto a base via symlinks
   description: This module creates and manages symlinks and directories to overlay one directory tree onto another.
-  version_added: "1.0.0"
+  version_added: "0.1.0"
   author: Eike (@E1k3)
 
 EXAMPLES: |

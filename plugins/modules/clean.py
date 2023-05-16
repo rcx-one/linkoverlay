@@ -9,12 +9,13 @@ __metaclass__ = type
 
 DOCUMENTATION = """
 module: clean
-short_description: Removed file from given path excluding a list of files
+short_description: clears a path while keeping files contained in a journal
 description: >
-  This module recursively removes all files and directories inside the given
-  path as long as that does not mean removing any of the paths that were
-  excluded.
-version_added: 1.0.0
+  Removes all paths in a directory except those contained in an exclude list.
+  Meant to be used with the journal callback or journal role to make sure a
+  directory does not contain anything that was not created by ansible.
+  Because of this, lines beginning with '!' are interpreted as errors messages.
+version_added: 0.1.0
 author: Eike (@E1k3)
 options:
   path:
