@@ -1,0 +1,31 @@
+- name: File list before conflict fail
+  ansible.builtin.find:
+    paths: "{{ temp_dir.path }}"
+    recurse: yes
+    file_type: any
+  register: overlay_before_execute
+
+- name: Fail because of conflicts
+  rcx_one.linkoverlay.linkoverlay:
+    base_dir: "{{ base_dir.path }}"
+    overlay_dir: "{{ overlay_dir.path }}"
+    backup_dir: "{{ backup_dir.path }}"
+    conflict: error
+    warn_conflict: true
+    collapse: false
+  ignore_errors: true
+  register: overlay_execute_fail
+
+- name: File list after conflict fail
+  ansible.builtin.find:
+    paths: "{{ temp_dir.path }}"
+    recurse: yes
+    file_type: any
+  register: overlay_after_execute_1
+
+- name: Check failing on conflicts result
+  ansible.builtin.assert:
+    that:
+      - overlay_execute_fail is failed
+      - overlay_execute_fail is not changed
+      - '(overlay_before_execute.files | combine({"atime": 0})) == (overlay_after_execute_1.files | combine({"atime": 0}))'

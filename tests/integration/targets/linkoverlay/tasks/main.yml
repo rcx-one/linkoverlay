@@ -10,120 +10,14 @@
   vars:
     root_dir: "{{ temp_dir.path }}"
 
-
-- name: Input validation tests
+- name: Overlay input validation tests
   ansible.builtin.include_tasks:
-    file: input_validation.yml
+    file: overlay_input_validation.yml
 
+- name: Overlay check mode tests
+  ansible.builtin.include_tasks:
+    file: overlay_check.yml
 
-# Check mode tests
-- name: Before check mode file list
-  ansible.builtin.find:
-    paths: "{{ temp_dir.path }}"
-    recurse: yes
-    file_type: any
-  register: before_checkmode
-
-- name: Overlay in check mode, keep conflicts, no collapse
-  rcx_one.linkoverlay.linkoverlay:
-    base_dir: "{{ base_dir.path }}"
-    overlay_dir: "{{ overlay_dir.path }}"
-    backup_dir: "{{ backup_dir.path }}"
-    conflict: keep
-    warn_conflict: true
-    collapse: false
-  check_mode: true
-  register: overlay_check_keep_nocollapse
-
-- name: Overlay in check mode, keep conflicts, collapse
-  rcx_one.linkoverlay.linkoverlay:
-    base_dir: "{{ base_dir.path }}"
-    overlay_dir: "{{ overlay_dir.path }}"
-    backup_dir: "{{ backup_dir.path }}"
-    conflict: keep
-    warn_conflict: true
-    collapse: true
-  check_mode: true
-  register: overlay_check_keep_collapse
-
-- name: Overlay in check mode, replace conflicts, no collapse
-  rcx_one.linkoverlay.linkoverlay:
-    base_dir: "{{ base_dir.path }}"
-    overlay_dir: "{{ overlay_dir.path }}"
-    backup_dir: "{{ backup_dir.path }}"
-    conflict: replace
-    warn_conflict: true
-    collapse: false
-  check_mode: true
-  register: overlay_check_replace_nocollapse
-
-- name: Overlay in check mode, replace conflicts, collapse
-  rcx_one.linkoverlay.linkoverlay:
-    base_dir: "{{ base_dir.path }}"
-    overlay_dir: "{{ overlay_dir.path }}"
-    backup_dir: "{{ backup_dir.path }}"
-    conflict: replace
-    warn_conflict: true
-    collapse: true
-  check_mode: true
-  register: overlay_check_replace_collapse
-
-- name: File list after check mode
-  ansible.builtin.find:
-    paths: "{{ temp_dir.path }}"
-    recurse: yes
-    file_type: any
-  register: after_checkmode
-
-- name: Check results from checkmode tests
-  ansible.builtin.assert:
-    that:
-      - overlay_check_keep_nocollapse is changed
-      - overlay_check_keep_nocollapse.warnings | length > 0
-      - overlay_check_keep_nocollapse.backed_up | length == 0
-      - overlay_check_keep_nocollapse.created_links | length == 9
-      - overlay_check_keep_nocollapse.removed_trees | length == 4
-      - overlay_check_keep_collapse is changed
-      - overlay_check_keep_collapse.warnings | length > 0
-      - overlay_check_keep_collapse.backed_up | length == 0
-      - overlay_check_keep_collapse.created_links | length == 9
-      - overlay_check_keep_collapse.removed_trees | length == 6
-      - overlay_check_replace_nocollapse is changed
-      - overlay_check_replace_nocollapse.warnings | length > 0
-      - overlay_check_replace_nocollapse.backed_up | length == 3
-      - overlay_check_replace_nocollapse.created_links | length == 12
-      - overlay_check_replace_nocollapse.removed_trees | length == 7
-      - overlay_check_replace_collapse is changed
-      - overlay_check_replace_collapse.warnings | length > 0
-      - overlay_check_replace_collapse.backed_up | length == 3
-      - overlay_check_replace_collapse.created_links | length == 12
-      - overlay_check_replace_collapse.removed_trees | length == 9
-      - '(before_checkmode.files | combine({"atime": 0})) == (after_checkmode.files | combine({"atime": 0}))'
-
-
-- name: Test failing on conflicts
-  block:
-  - name: Fail because of conflicts
-    rcx_one.linkoverlay.linkoverlay:
-      base_dir: "{{ base_dir.path }}"
-      overlay_dir: "{{ overlay_dir.path }}"
-      backup_dir: "{{ backup_dir.path }}"
-      conflict: error
-      warn_conflict: true
-      collapse: false
-    ignore_errors: true
-    register: fail_result
-
-  - name: File list after conflict fail
-    ansible.builtin.find:
-      paths: "{{ temp_dir.path }}"
-      recurse: yes
-      file_type: any
-    register: after_conflict_fail
-
-  - name: Check failing on conflicts result
-    ansible.builtin.assert:
-      that:
-        - fail_result is failed
-        - fail_result is not changed
-        - '(before_checkmode.files | combine({"atime": 0})) == (after_conflict_fail.files | combine({"atime": 0}))'
+- name: Overlay execute tests
+  ansible.builtin.include_tasks:
+    file: overlay_execute.yml
