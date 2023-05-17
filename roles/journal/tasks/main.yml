@@ -1,10 +1,30 @@
 ---
-- name: Add touched path to journal for single result
+
+# - name: Record error in single task
+#   ansible.builtin.lineinfile:
+#     path: "{{ journal_path }}"
+#     line: "! task failed"
+#   when: result is not contains('results') and result is failed
+#   delegate_to: localhost
+
+# - name: Record errors for loop task
+#   ansible.builtin.lineinfile:
+#     path: "{{ journal_path }}"
+#     line: "! item of task failed"
+#   when: item is failed
+#   loop: "{{ result.results | default([]) }}"
+#   delegate_to: localhost
+
+- name: Record result of single task
   ansible.builtin.lineinfile:
     path: "{{ journal_path }}"
-    line: "{{ result.invocation.module_args.path }}"
-  ignore_errors: true
-  register: 
-  when: result is not contains('results')
+    line: "{{ result.dest | default(result.path) }}"
+  when: result is not contains("results") and (result is contains("dest") or result is contains("path"))
+  delegate_to: localhost
 
-- name: Add errors to journal
+- name: Record results of loop task
+  ansible.builtin.lineinfile:
+    path: "{{ journal_path }}"
+    line: "{{ item.dest | default(item.path) }}"
+  loop: "{{ result.results | default([]) }}"
+  delegate_to: localhost
