@@ -1,3 +1,4 @@
+---
 - name: File list before conflict fail
   ansible.builtin.find:
     paths: "{{ temp_dir.path }}"

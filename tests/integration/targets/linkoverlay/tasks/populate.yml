@@ -1,3 +1,4 @@
+---
 - name: Create base directory
   ansible.builtin.file:
     state: directory

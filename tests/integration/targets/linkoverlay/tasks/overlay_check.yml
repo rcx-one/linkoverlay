@@ -1,3 +1,4 @@
+---
 - name: Before check mode file list
   ansible.builtin.find:
     paths: "{{ temp_dir.path }}"

@@ -1,3 +1,4 @@
+---
 - name: Fail because base does not exist
   rcx_one.linkoverlay.linkoverlay:
     base_dir: "{{ temp_dir.path }}/idontexist"
