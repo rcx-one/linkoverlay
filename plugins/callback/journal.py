@@ -6,6 +6,7 @@ __metaclass__ = type
 
 from ansible.plugins.callback import CallbackBase
 from ansible.executor.task_result import TaskResult
+from typing import List
 from ansible.playbook.task import Task
 # from ansible.inventory.host import Host
 
@@ -33,39 +34,76 @@ class CallbackModule(CallbackBase):
         super().v2_runner_on_ok(result)
         task: Task = result._task
         # host: Host = result._host
-        result: dict = result._result
+        task_result: dict = result._result
+
+        if "results" in task_result:  # loops get handled by v2_runner_item_*
+            return
 
         path = task.get_vars().get("journal_path")
         if path is not None:
-            with open(path, "a") as file:
-                if "results" in result:
-                    results = result["results"]
-                else:
-                    results = [result]
+            self._write_result(path, task, task_result)
 
-                for r in results:
-                    invocation = r["invocation"]
-                    if (
-                        "module_args" not in invocation
-                        or "path" not in invocation["module_args"]
-                    ):
-                        name = task.get_name().replace("\n", "\\n")
-                        file.write(f"!{name}: path argument missing\n")
-                        continue
+    def v2_runner_item_on_ok(self, result: TaskResult):
+        super().v2_runner_item_on_ok(result)
+        task: Task = result._task
+        # host: Host = result._host
+        task_result: dict = result._result
 
-                    args = invocation["module_args"]
-                    if args.get("state", "present") != "absent":
-                        file.write(args["path"] + "\n")
+        path = task.get_vars().get("journal_path")
+        if path is not None:
+            self._write_result(path, task, task_result)
 
     def v2_runner_on_failed(self, result, ignore_errors=False):
         super().v2_runner_on_failed(result, ignore_errors=ignore_errors)
-        if not ignore_errors:
-            task: Task = result._task
-            # host: Host = result._host
-            result: dict = result._result
+        task: Task = result._task
+        # host: Host = result._host
+        task_result: dict = result._result
 
-            path = task.get_vars().get("journal_path")
-            if path is not None:
-                with open(path, "a") as file:
-                    name = task.get_name().replace("\n", "\\n")
-                    file.write(f"!{name}: failed\n")
+        if not ignore_errors:
+            return
+        if "results" in task_result:  # loops get handled by v2_runner_item_*
+            return
+
+        path = task.get_vars().get("journal_path")
+        if path is not None:
+            # TODO: add info about failed task
+            self._write_error(path, task, task_result, "failed")
+
+    def v2_runner_on_item_failed(self, result, ignore_errors=False):
+        super().v2_runner_on_item_failed(result, ignore_errors=ignore_errors)
+        task: Task = result._task
+        # host: Host = result._host
+        task_result: dict = result._result
+
+        if not ignore_errors:
+            return
+
+        path = task.get_vars().get("journal_path")
+        if path is not None:
+            # TODO: add info about failed item
+            self._write_error(path, task, task_result, "failed with item")
+
+    def _write_result(self, journal_path: str, task: Task, result):
+        if result.get("skipped", False):
+            return
+        if (task.get_name() == "ansible.builtin.file"
+                and result.get("state") == "absent"):
+            return
+
+        path = result.get("dest", result.get("path"))
+        if path is None:
+            self._write_error(
+                journal_path,
+                task,
+                result,
+                "missing path argument"
+            )
+
+        with open(journal_path, "a") as file:
+            file.write(f"{path}\n")
+
+    def _write_error(self, journal_path: str, task: Task, result, msg):
+        with open(journal_path, "a") as file:
+            task_name = task.get_name().replace("\n", "\\n")
+            msg = msg.replace("\n", "\\n")
+            file.write(f"!{task_name}: {msg}\n")
