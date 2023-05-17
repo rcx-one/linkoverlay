@@ -1,0 +1,187 @@
+- name: journal tests
+  hosts: localhost
+  tasks:
+    - name: create tempdir
+      ansible.builtin.tempfile:
+        suffix: .journaltest
+        state: directory
+      register: tempdir
+
+    - name: record tempdir
+      ansible.builtin.set_fact:
+        tempdir: "{{ tempdir.path }}"
+
+    - name: touch single 1
+      vars: {journal_path: ./journal}
+      ansible.builtin.file:
+        state: touch
+        path: "{{ tempdir }}/touch_single1"
+      register: touch_single1_result
+
+    - name: touch single 2
+      vars: {journal_path: ./journal}
+      ansible.builtin.file:
+        state: touch
+        dest: "{{ tempdir }}/touch_single2"
+      register: touch_single2_result
+
+    - name: touch loop 1
+      vars: {journal_path: ./journal}
+      ansible.builtin.file:
+        state: touch
+        path: "{{ item }}"
+      when: item != "skipme"
+      loop:
+        -  "{{ tempdir }}/touch_loop1-1"
+        -  "{{ tempdir }}/touch_loop1-2"
+        - skipme
+      register: touch_loop1_result
+
+    - name: touch loop 2
+      vars: {journal_path: ./journal}
+      ansible.builtin.file:
+        state: touch
+        dest: "{{ item }}"
+      when: item != "skipme"
+      loop:
+        -  "{{ tempdir }}/touch_loop2-1"
+        -  "{{ tempdir }}/touch_loop2-2"
+        - skipme
+      register: touch_loop2_result
+
+
+
+    - name: copy single
+      vars: {journal_path: ./journal}
+      ansible.builtin.copy:
+        src: files/copy
+        dest: "{{ tempdir }}/copy_single"
+      register: copy_single_result
+
+    - name: copy loop
+      vars: {journal_path: ./journal}
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+      when: item.dest != "skipme"
+      loop:
+        - dest: "{{ tempdir }}/copy_loop-1"
+          src: files/copy
+        - dest: "{{ tempdir }}/copy_loop-2"
+          src: files/copy
+        - dest: "{{ tempdir }}/copy_loop-3"
+          src: files/missing
+        - dest: skipme
+          src: files/copy
+      ignore_errors: true
+      register: copy_loop_result
+
+
+    - name: copy vault single
+      vars: {journal_path: ./journal}
+      ansible.builtin.copy:
+        src: files/vault
+        dest: "{{ tempdir }}/copy_single"
+      register: copy_vault_single_result
+
+    - name: copy vault loop
+      vars: {journal_path: ./journal}
+      ansible.builtin.copy:
+        src: files/vault
+        dest: "{{ item }}"
+      when: item != "skipme"
+      loop:
+        -  "{{ tempdir }}/copy_vault_loop-1"
+        -  "{{ tempdir }}/copy_vault_loop-2"
+        - skipme
+      register: copy_vault_loop_result
+
+
+
+    - name: template single
+      vars: {journal_path: ./journal}
+      ansible.builtin.template:
+        src: files/template
+        dest: "{{ tempdir }}/template_single"
+      register: template_single_result
+
+    - name: template loop
+      vars: {journal_path: ./journal}
+      ansible.builtin.template:
+        src: files/template
+        dest: "{{ item }}"
+      when: item != "skipme"
+      loop:
+        -  "{{ tempdir }}/template_loop-1"
+        -  "{{ tempdir }}/template_loop-2"
+        - skipme
+      register: template_loop_result
+
+
+    - name: template vault single
+      vars: {journal_path: ./journal}
+      ansible.builtin.template:
+        src: files/vault_template
+        dest: "{{ tempdir }}/template_single"
+      register: template_vault_single_result
+
+    - name: template vault loop
+      vars: {journal_path: ./journal}
+      ansible.builtin.template:
+        src: files/vault_template
+        dest: "{{ item }}"
+      when: item != "skipme"
+      loop:
+        -  "{{ tempdir }}/template_vault_loop-1"
+        -  "{{ tempdir }}/template_vault_loop-2"
+        - skipme
+      register: template_vault_loop_result
+
+
+
+    - name: print results
+      ansible.builtin.debug:
+        var: "{{ item }}"
+      loop:
+        - touch_single1_result
+        - touch_single2_result
+        - touch_loop1_result
+        - touch_loop2_result
+
+        - copy_single_result
+        - copy_loop_result
+
+        - copy_vault_single_result
+        - copy_vault_loop_result
+
+        - template_single_result
+        - template_loop_result
+
+        - template_vault_single_result
+        - template_vault_loop_result
+
+    - name: print dests
+      ansible.builtin.debug:
+        var: "{{ item }}"
+      loop:
+        - touch_single1_result.dest
+        - touch_single2_result.dest
+        - touch_loop1_result.results | map(attribute="dest")
+        - touch_loop2_result.results | map(attribute="dest")
+
+        - copy_single_result.dest
+        - copy_loop_result.results | map(attribute="dest")
+
+        - copy_vault_single_result.dest
+        - copy_vault_loop_result.results | map(attribute="dest")
+
+        - template_single_result.dest
+        - template_loop_result.results | map(attribute="dest")
+
+        - template_vault_single_result.dest
+        - template_vault_loop_result.results | map(attribute="dest")
+
+    - name: remove tempdir
+      ansible.builtin.file:
+        path: "{{ tempdir }}"
+        state: absent
