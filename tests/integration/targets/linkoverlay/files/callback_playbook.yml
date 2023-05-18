@@ -1,0 +1,133 @@
+- name: journal tests
+  hosts: localhost
+  tasks:
+    - name: touch without journal
+      ansible.builtin.file:
+        state: touch
+        path: "{{ target_dir }}/touch_untracked"
+
+    - name: touch single 1
+      vars:
+        journal_path: "journal.txt"
+      ansible.builtin.file:
+        state: touch
+        path: "{{ target_dir }}/touch_single1"
+
+    - name: touch single 2
+      vars:
+        journal_path: journal.txt
+      ansible.builtin.file:
+        state: touch
+        dest: "{{ target_dir }}/touch_single2"
+
+    - name: touch loop 1
+      vars:
+        journal_path: journal.txt
+      ansible.builtin.file:
+        state: touch
+        path: "{{ item }}"
+      when: item != "skipme"
+      loop:
+        - "{{ target_dir }}/touch_loop1-1"
+        - "{{ target_dir }}/touch_loop1-2"
+        - skipme
+
+    - name: touch loop 2
+      vars:
+        journal_path: journal.txt
+      ansible.builtin.file:
+        state: touch
+        dest: "{{ item }}"
+      when: item != "skipme"
+      loop:
+        - "{{ target_dir }}/touch_loop2-1"
+        - "{{ target_dir }}/touch_loop2-2"
+        - skipme
+
+
+
+    - name: copy single
+      vars:
+        journal_path: journal.txt
+      ansible.builtin.copy:
+        src: files/copy
+        dest: "{{ target_dir }}/copy_single"
+
+    - name: copy loop
+      vars:
+        journal_path: journal.txt
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+      when: item.dest != "skipme"
+      loop:
+        - dest: "{{ target_dir }}/copy_loop-1"
+          src: files/copy
+        - dest: "{{ target_dir }}/copy_loop-2"
+          src: files/copy
+        - dest: "{{ target_dir }}/copy_loop-3"
+          src: files/missing
+        - dest: skipme
+          src: files/copy
+      ignore_errors: true
+
+
+    - name: copy vault single
+      vars:
+        journal_path: journal.txt
+      ansible.builtin.copy:
+        src: files/vault
+        dest: "{{ target_dir }}/copy_single"
+
+    - name: copy vault loop
+      vars:
+        journal_path: journal.txt
+      ansible.builtin.copy:
+        src: files/vault
+        dest: "{{ item }}"
+      when: item != "skipme"
+      loop:
+        - "{{ target_dir }}/copy_vault_loop-1"
+        - "{{ target_dir }}/copy_vault_loop-2"
+        - skipme
+
+
+
+    - name: template single
+      vars:
+        journal_path: journal.txt
+      ansible.builtin.template:
+        src: files/template
+        dest: "{{ target_dir }}/template_single"
+
+    - name: template loop
+      vars:
+        journal_path: journal.txt
+      ansible.builtin.template:
+        src: files/template
+        dest: "{{ item }}"
+      when: item != "skipme"
+      loop:
+        - "{{ target_dir }}/template_loop-1"
+        - "{{ target_dir }}/template_loop-2"
+        - skipme
+
+
+    - name: template vault single
+      vars:
+        journal_path: journal.txt
+      ansible.builtin.template:
+        src: files/vault_template
+        dest: "{{ target_dir }}/template_single"
+
+    - name: template vault loop
+      vars:
+        journal_path: journal.txt
+      ansible.builtin.template:
+        src: files/vault_template
+        dest: "{{ item }}"
+      when: item != "skipme"
+      loop:
+        - "{{ target_dir }}/template_vault_loop-1"
+        - "{{ target_dir }}/template_vault_loop-2"
+        - skipme

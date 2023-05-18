@@ -22,3 +22,7 @@
 - name: Overlay execute tests
   ansible.builtin.include_tasks:
     file: overlay_execute.yml
+
+- name: Journal callback tests
+  ansible.builtin.include_tasks:
+    file: callback.yml

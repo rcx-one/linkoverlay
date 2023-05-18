@@ -1,0 +1,68 @@
+- name: Create local tempdir
+  ansible.builtin.tempfile:
+    suffix: .linkoverlay_callback_test
+    state: directory
+  register: callback_test_dir
+
+- name: Copy playbook
+  ansible.builtin.copy:
+    src: files/callback_playbook.yml
+    dest: "{{ callback_test_dir.path }}/playbook.yml"
+
+- name: Create files and target directories
+  ansible.builtin.file:
+    dest: "{{ callback_test_dir.path }}/{{ item }}"
+    state: directory
+  loop:
+    - files
+    - target
+
+- name: Copy files
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ callback_test_dir.path }}/files/{{ item | basename }}"
+    decrypt: false
+  with_fileglob: 'files/*'
+
+- name: Run playbook
+  ansible.builtin.command:
+    chdir: "{{ callback_test_dir.path }}"
+    cmd: >-
+      ansible-playbook
+      --inventory=localhost
+      --vault-pass-file='files/vault.pw'
+      --extra-vars='target_dir={{ callback_test_dir.path }}/target'
+      playbook.yml
+  register: playbook
+  environment:
+    ANSIBLE_CALLBACKS_ENABLED: rcx_one.linkoverlay.journal
+
+- name: Check if journal contains the correct paths
+  ansible.builtin.assert:
+    that: journal | symmetric_difference(expected) == []
+  vars:
+    journal: "{{ lookup('ansible.builtin.file', callback_test_dir.path ~ '/journal.txt').splitlines() }}"
+    expected:
+      - "{{ callback_test_dir.path }}/target/touch_single1"
+      - "{{ callback_test_dir.path }}/target/touch_single2"
+      - "{{ callback_test_dir.path }}/target/touch_loop1-1"
+      - "{{ callback_test_dir.path }}/target/touch_loop1-2"
+      - "{{ callback_test_dir.path }}/target/touch_loop2-1"
+      - "{{ callback_test_dir.path }}/target/touch_loop2-2"
+      - "{{ callback_test_dir.path }}/target/copy_single"
+      - "{{ callback_test_dir.path }}/target/copy_loop-1"
+      - "{{ callback_test_dir.path }}/target/copy_loop-2"
+      - "{{ callback_test_dir.path }}/target/copy_single"
+      - "{{ callback_test_dir.path }}/target/copy_vault_loop-1"
+      - "{{ callback_test_dir.path }}/target/copy_vault_loop-2"
+      - "{{ callback_test_dir.path }}/target/template_single"
+      - "{{ callback_test_dir.path }}/target/template_loop-1"
+      - "{{ callback_test_dir.path }}/target/template_loop-2"
+      - "{{ callback_test_dir.path }}/target/template_single"
+      - "{{ callback_test_dir.path }}/target/template_vault_loop-1"
+      - "{{ callback_test_dir.path }}/target/template_vault_loop-2"
+
+- name: Remove local tempdir
+  ansible.builtin.file:
+    path: "{{ callback_test_dir.path }}"
+    state: absent
