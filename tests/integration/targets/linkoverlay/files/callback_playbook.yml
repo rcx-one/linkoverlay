@@ -1,3 +1,4 @@
+---
 - name: journal tests
   hosts: localhost
   tasks:

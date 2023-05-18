@@ -1,30 +1,15 @@
 ---
-
-# - name: Record error in single task
-#   ansible.builtin.lineinfile:
-#     path: "{{ journal_path }}"
-#     line: "! task failed"
-#   when: result is not contains('results') and result is failed
-#   delegate_to: localhost
-
-# - name: Record errors for loop task
-#   ansible.builtin.lineinfile:
-#     path: "{{ journal_path }}"
-#     line: "! item of task failed"
-#   when: item is failed
-#   loop: "{{ result.results | default([]) }}"
-#   delegate_to: localhost
-
 - name: Record result of single task
   ansible.builtin.lineinfile:
     path: "{{ journal_path }}"
-    line: "{{ result.dest | default(result.path) }}"
-  when: result is not contains("results") and (result is contains("dest") or result is contains("path"))
+    line: "{{ result.dest | default(result.path | default('!path argument is missing for task')) }}"
+  when: result is not contains("results") and result is not skipped and result is not failed
   delegate_to: localhost
 
 - name: Record results of loop task
   ansible.builtin.lineinfile:
     path: "{{ journal_path }}"
-    line: "{{ item.dest | default(item.path) }}"
+    line: "{{ item.dest | default(item.path | default('!path argument is missing for item')) }}"
+  when: item is not skipped and item is not failed
   loop: "{{ result.results | default([]) }}"
   delegate_to: localhost

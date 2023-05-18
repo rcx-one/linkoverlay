@@ -53,36 +53,6 @@ class CallbackModule(CallbackBase):
         if path is not None:
             self._write_result(path, task, task_result)
 
-    def v2_runner_on_failed(self, result, ignore_errors=False):
-        super().v2_runner_on_failed(result, ignore_errors=ignore_errors)
-        task: Task = result._task
-        # host: Host = result._host
-        task_result: dict = result._result
-
-        if not ignore_errors:
-            return
-        if "results" in task_result:  # loops get handled by v2_runner_item_*
-            return
-
-        path = task.get_vars().get("journal_path")
-        if path is not None:
-            # TODO: add info about failed task
-            self._write_error(path, task, task_result, "failed")
-
-    def v2_runner_on_item_failed(self, result, ignore_errors=False):
-        super().v2_runner_on_item_failed(result, ignore_errors=ignore_errors)
-        task: Task = result._task
-        # host: Host = result._host
-        task_result: dict = result._result
-
-        if not ignore_errors:
-            return
-
-        path = task.get_vars().get("journal_path")
-        if path is not None:
-            # TODO: add info about failed item
-            self._write_error(path, task, task_result, "failed with item")
-
     def _write_result(self, journal_path: str, task: Task, result):
         if result.get("skipped", False):
             return
@@ -91,19 +61,10 @@ class CallbackModule(CallbackBase):
             return
 
         path = result.get("dest", result.get("path"))
-        if path is None:
-            self._write_error(
-                journal_path,
-                task,
-                result,
-                "missing path argument"
-            )
 
         with open(journal_path, "a") as file:
-            file.write(f"{path}\n")
-
-    def _write_error(self, journal_path: str, task: Task, result, msg):
-        with open(journal_path, "a") as file:
-            task_name = task.get_name().replace("\n", "\\n")
-            msg = msg.replace("\n", "\\n")
-            file.write(f"!{task_name}: {msg}\n")
+            if path is None:
+                task_name = task.get_name().replace("\n", "\\n")
+                file.write(f"!{task_name}: missing path argument\n")
+            else:
+                file.write(f"{path}\n")

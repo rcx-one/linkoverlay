@@ -3,11 +3,13 @@
     suffix: .linkoverlay_callback_test
     state: directory
   register: callback_test_dir
+  delegate_to: localhost
 
 - name: Copy playbook
   ansible.builtin.copy:
     src: files/callback_playbook.yml
     dest: "{{ callback_test_dir.path }}/playbook.yml"
+  delegate_to: localhost
 
 - name: Create files and target directories
   ansible.builtin.file:
@@ -16,6 +18,7 @@
   loop:
     - files
     - target
+  delegate_to: localhost
 
 - name: Copy files
   ansible.builtin.copy:
@@ -23,6 +26,7 @@
     dest: "{{ callback_test_dir.path }}/files/{{ item | basename }}"
     decrypt: false
   with_fileglob: 'files/*'
+  delegate_to: localhost
 
 - name: Run playbook
   ansible.builtin.command:
@@ -36,6 +40,7 @@
   register: playbook
   environment:
     ANSIBLE_CALLBACKS_ENABLED: rcx_one.linkoverlay.journal
+  delegate_to: localhost
 
 - name: Check if journal contains the correct paths
   ansible.builtin.assert:
@@ -61,8 +66,10 @@
       - "{{ callback_test_dir.path }}/target/template_single"
       - "{{ callback_test_dir.path }}/target/template_vault_loop-1"
       - "{{ callback_test_dir.path }}/target/template_vault_loop-2"
+  delegate_to: localhost
 
 - name: Remove local tempdir
   ansible.builtin.file:
     path: "{{ callback_test_dir.path }}"
     state: absent
+  delegate_to: localhost

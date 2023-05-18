@@ -25,4 +25,8 @@
 
 - name: Journal callback tests
   ansible.builtin.include_tasks:
-    file: callback.yml
+    file: journal_callback.yml
+
+- name: Journal role tests
+  ansible.builtin.include_tasks:
+    file: journal_role.yml
