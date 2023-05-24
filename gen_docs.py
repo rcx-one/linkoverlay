@@ -31,7 +31,7 @@ if __name__ == "__main__":
         for name, doc in MODULE_ARGS.items()
     }
 
-    with open("linkoverlay.partial.yml") as doc_partial:
+    with open("plugins/modules/linkoverlay.partial.yml") as doc_partial:
         doc_yml = safe_load(doc_partial)
     doc_yml["DOCUMENTATION"]["options"] = docs
     with open("plugins/modules/linkoverlay.yml", "w") as doc_file:
