@@ -6,9 +6,13 @@ __metaclass__ = type
 
 from ansible.plugins.callback import CallbackBase
 from ansible.executor.task_result import TaskResult
-from typing import List
 from ansible.playbook.task import Task
-# from ansible.inventory.host import Host
+from ansible.playbook.play import Play
+from ansible.playbook import Playbook
+
+from ansible.template import Templar
+from ansible.plugins.strategy import SharedPluginLoaderObj
+from ansible.inventory.host import Host
 
 DOCUMENTATION = """
     name: journal
@@ -30,28 +34,13 @@ class CallbackModule(CallbackBase):
     def __init__(self, display=None):
         super(CallbackModule, self).__init__(display=display)
 
-    def v2_runner_on_ok(self, result: TaskResult):
-        super().v2_runner_on_ok(result)
-        task: Task = result._task
-        # host: Host = result._host
-        task_result: dict = result._result
-
-        if "results" in task_result:  # loops get handled by v2_runner_item_*
-            return
-
-        path = task.get_vars().get("journal_path")
-        if path is not None:
-            self._write_result(path, task, task_result)
-
-    def v2_runner_item_on_ok(self, result: TaskResult):
-        super().v2_runner_item_on_ok(result)
-        task: Task = result._task
-        # host: Host = result._host
-        task_result: dict = result._result
-
-        path = task.get_vars().get("journal_path")
-        if path is not None:
-            self._write_result(path, task, task_result)
+    def _all_vars(self, host: Host, task: Task):
+        return self.play.get_variable_manager().get_vars(
+            loader=self.playbook.get_loader(),
+            play=self.play,
+            host=host,
+            task=task
+        )
 
     def _write_result(self, journal_path: str, task: Task, result):
         if result.get("skipped", False):
@@ -68,3 +57,39 @@ class CallbackModule(CallbackBase):
                 file.write(f"!{task_name}: missing path argument\n")
             else:
                 file.write(f"{path}\n")
+
+    def v2_runner_on_ok(self, result: TaskResult):
+        super().v2_runner_on_ok(result)
+        task: Task = result._task
+        # host: Host = result._host
+        task_result: dict = result._result
+
+        if "results" in task_result:  # loops get handled by v2_runner_item_*
+            return
+
+        path = task.get_vars().get("journal_path")
+        if path is not None:
+            self._write_result(path, task, task_result)
+
+    def v2_playbook_on_start(self, playbook: Playbook):
+        self.playbook = playbook
+
+    def v2_playbook_on_play_start(self, play: Play):
+        self.play = play
+
+    def v2_runner_item_on_ok(self, result: TaskResult):
+        super().v2_runner_item_on_ok(result)
+        task: Task = result._task
+        host: Host = result._host
+        task_result: dict = result._result
+
+        templar = Templar(
+            loader=self.playbook.get_loader(),
+            shared_loader_obj=SharedPluginLoaderObj(),
+            variables=self._all_vars(host=host, task=task)
+        )
+
+        path = templar.template(task.get_vars().get("journal_path"))
+
+        if path is not None:
+            self._write_result(path, task, task_result)
