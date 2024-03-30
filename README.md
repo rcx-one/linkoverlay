@@ -40,7 +40,7 @@ Using the journal callback plugin:
             base_dir: "$HOME"
             overlay_dir: "$HOME/.dotfiles"
 
-Or using the callback role:
+Or using the journal role:
 
     - hosts: machines
       vars:
