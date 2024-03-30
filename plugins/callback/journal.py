@@ -11,7 +11,8 @@ from ansible.playbook.play import Play
 from ansible.playbook import Playbook
 
 from ansible.template import Templar
-from ansible.plugins.strategy import SharedPluginLoaderObj
+from ansible.plugins.loader import PluginLoader
+
 from ansible.inventory.host import Host
 
 DOCUMENTATION = """
@@ -35,8 +36,8 @@ class CallbackModule(CallbackBase):
         super(CallbackModule, self).__init__(display=display)
 
     def _all_vars(self, host: Host, task: Task):
+        self.play: Play
         return self.play.get_variable_manager().get_vars(
-            loader=self.playbook.get_loader(),
             play=self.play,
             host=host,
             task=task
@@ -85,11 +86,11 @@ class CallbackModule(CallbackBase):
 
         templar = Templar(
             loader=self.playbook.get_loader(),
-            shared_loader_obj=SharedPluginLoaderObj(),
             variables=self._all_vars(host=host, task=task)
         )
-
         path = templar.template(task.get_vars().get("journal_path"))
+        if path != task.get_vars().get("journal_path"):
+            print("WTF\n\n\n\n", result)
 
         if path is not None:
             self._write_result(path, task, task_result)

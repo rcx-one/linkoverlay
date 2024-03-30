@@ -1,16 +1,16 @@
 ---
-- name: Create local temporary file for journal
+- name: "Role Test: Create local temporary file for journal"
   ansible.builtin.tempfile:
     suffix: .linkoverlay_role_test
     state: file
   register: role_test_journal
   delegate_to: localhost
 
-- name: Record journal location
+- name: "Role Test: Record journal location"
   ansible.builtin.set_fact:
     journal_path: "{{ role_test_journal.path }}"
 
-- name: Create tempdir as target
+- name: "Role Test: Create tempdir as target"
   ansible.builtin.tempfile:
     suffix: .linkoverlay_role_test
     state: directory
@@ -18,7 +18,7 @@
 
 
 
-- name: record task without 'path' to journal
+- name: "Role Test: record task without 'path' to journal"
   ansible.builtin.debug:
     msg: Ignore me.
   register: result
@@ -27,30 +27,30 @@
     name: rcx_one.linkoverlay.journal
 
 
-- name: touch without journal
+- name: "Role Test: touch without journal"
   ansible.builtin.file:
     state: touch
     path: "{{ role_test_target_dir.path }}/touch_untracked"
 
-- name: touch single 1
+- name: "Role Test: touch single 1"
   ansible.builtin.file:
     state: touch
     path: "{{ role_test_target_dir.path }}/touch_single1"
   register: result
-- name: record result
+- name: "Role Test: record result"
   include_role:
     name: rcx_one.linkoverlay.journal
 
-- name: touch single 2
+- name: "Role Test: touch single 2"
   ansible.builtin.file:
     state: touch
     dest: "{{ role_test_target_dir.path }}/touch_single2"
   register: result
-- name: record result
+- name: "Role Test: record result"
   include_role:
     name: rcx_one.linkoverlay.journal
 
-- name: touch loop 1
+- name: "Role Test: touch loop 1"
   ansible.builtin.file:
     state: touch
     path: "{{ item }}"
@@ -60,11 +60,11 @@
     - "{{ role_test_target_dir.path }}/touch_loop1-2"
     - skipme
   register: result
-- name: record result
+- name: "Role Test: record result"
   include_role:
     name: rcx_one.linkoverlay.journal
 
-- name: touch loop 2
+- name: "Role Test: touch loop 2"
   ansible.builtin.file:
     state: touch
     dest: "{{ item }}"
@@ -74,22 +74,22 @@
     - "{{ role_test_target_dir.path }}/touch_loop2-2"
     - skipme
   register: result
-- name: record result
+- name: "Role Test: record result"
   include_role:
     name: rcx_one.linkoverlay.journal
 
 
 
-- name: copy single
+- name: "Role Test: copy single"
   ansible.builtin.copy:
     src: files/copy
     dest: "{{ role_test_target_dir.path }}/copy_single"
   register: result
-- name: record result
+- name: "Role Test: record result"
   include_role:
     name: rcx_one.linkoverlay.journal
 
-- name: copy loop
+- name: "Role Test: copy loop"
   ansible.builtin.copy:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
@@ -105,22 +105,22 @@
       src: files/copy
   ignore_errors: true
   register: result
-- name: record result
+- name: "Role Test: record result"
   include_role:
     name: rcx_one.linkoverlay.journal
 
 
 
-- name: template single
+- name: "Role Test: template single"
   ansible.builtin.template:
     src: files/template
     dest: "{{ role_test_target_dir.path }}/template_single"
   register: result
-- name: record result
+- name: "Role Test: record result"
   include_role:
     name: rcx_one.linkoverlay.journal
 
-- name: template loop
+- name: "Role Test: template loop"
   ansible.builtin.template:
     src: files/template
     dest: "{{ item }}"
@@ -130,13 +130,13 @@
     - "{{ role_test_target_dir.path }}/template_loop-2"
     - skipme
   register: result
-- name: record result
+- name: "Role Test: record result"
   include_role:
     name: rcx_one.linkoverlay.journal
 
 
 
-- name: Check if journal contains the correct paths
+- name: "Role Test: Check if journal contains the correct paths"
   ansible.builtin.assert:
     that: journal | symmetric_difference(expected) == []
   vars:

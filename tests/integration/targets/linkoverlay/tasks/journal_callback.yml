@@ -1,17 +1,17 @@
-- name: Create local tempdir
+- name: "Callback Test: Create local tempdir"
   ansible.builtin.tempfile:
     suffix: .linkoverlay_callback_test
     state: directory
   register: callback_test_dir
   delegate_to: localhost
 
-- name: Copy playbook
+- name: "Callback Test: Copy playbook"
   ansible.builtin.copy:
     src: files/callback_playbook.yml
     dest: "{{ callback_test_dir.path }}/playbook.yml"
   delegate_to: localhost
 
-- name: Create files and target directories
+- name: "Callback Test: Create files and target directories"
   ansible.builtin.file:
     dest: "{{ callback_test_dir.path }}/{{ item }}"
     state: directory
@@ -20,7 +20,7 @@
     - target
   delegate_to: localhost
 
-- name: Copy files
+- name: "Callback Test: Copy files"
   ansible.builtin.copy:
     src: "{{ item }}"
     dest: "{{ callback_test_dir.path }}/files/{{ item | basename }}"
@@ -28,7 +28,7 @@
   with_fileglob: 'files/*'
   delegate_to: localhost
 
-- name: Run playbook
+- name: "Callback Test: Run playbook"
   ansible.builtin.command:
     chdir: "{{ callback_test_dir.path }}"
     cmd: >-
@@ -42,7 +42,7 @@
     ANSIBLE_CALLBACKS_ENABLED: rcx_one.linkoverlay.journal
   delegate_to: localhost
 
-- name: Check if journal contains the correct paths
+- name: "Callback Test: Check if journal contains the correct paths"
   ansible.builtin.assert:
     that: journal | symmetric_difference(expected) == []
   vars:
@@ -68,7 +68,7 @@
       - "{{ callback_test_dir.path }}/target/template_vault_loop-2"
   delegate_to: localhost
 
-- name: Remove local tempdir
+- name: "Callback Test: Remove local tempdir"
   ansible.builtin.file:
     path: "{{ callback_test_dir.path }}"
     state: absent
