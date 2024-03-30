@@ -1,6 +1,8 @@
 ---
 - name: journal tests
   hosts: localhost
+  vars:
+    journal_location: "journal.txt"
   tasks:
     - name: touch without journal
       ansible.builtin.file:
@@ -9,21 +11,21 @@
 
     - name: touch single 1
       vars:
-        journal_path: "journal.txt"
+        journal_path: "{{ journal_location }}"
       ansible.builtin.file:
         state: touch
         path: "{{ target_dir }}/touch_single1"
 
     - name: touch single 2
       vars:
-        journal_path: journal.txt
+        journal_path: "{{ journal_location }}"
       ansible.builtin.file:
         state: touch
         dest: "{{ target_dir }}/touch_single2"
 
     - name: touch loop 1
       vars:
-        journal_path: journal.txt
+        journal_path: "{{ journal_location }}"
       ansible.builtin.file:
         state: touch
         path: "{{ item }}"
@@ -35,7 +37,7 @@
 
     - name: touch loop 2
       vars:
-        journal_path: journal.txt
+        journal_path: "{{ journal_location }}"
       ansible.builtin.file:
         state: touch
         dest: "{{ item }}"
@@ -49,14 +51,14 @@
 
     - name: copy single
       vars:
-        journal_path: journal.txt
+        journal_path: "{{ journal_location }}"
       ansible.builtin.copy:
         src: files/copy
         dest: "{{ target_dir }}/copy_single"
 
     - name: copy loop
       vars:
-        journal_path: journal.txt
+        journal_path: "{{ journal_location }}"
       ansible.builtin.copy:
         src: "{{ item.src }}"
         dest: "{{ item.dest }}"
@@ -75,14 +77,14 @@
 
     - name: copy vault single
       vars:
-        journal_path: journal.txt
+        journal_path: "{{ journal_location }}"
       ansible.builtin.copy:
         src: files/vault
         dest: "{{ target_dir }}/copy_single"
 
     - name: copy vault loop
       vars:
-        journal_path: journal.txt
+        journal_path: "{{ journal_location }}"
       ansible.builtin.copy:
         src: files/vault
         dest: "{{ item }}"
@@ -96,14 +98,14 @@
 
     - name: template single
       vars:
-        journal_path: journal.txt
+        journal_path: "{{ journal_location }}"
       ansible.builtin.template:
         src: files/template
         dest: "{{ target_dir }}/template_single"
 
     - name: template loop
       vars:
-        journal_path: journal.txt
+        journal_path: "{{ journal_location }}"
       ansible.builtin.template:
         src: files/template
         dest: "{{ item }}"
@@ -116,14 +118,14 @@
 
     - name: template vault single
       vars:
-        journal_path: journal.txt
+        journal_path: "{{ journal_location }}"
       ansible.builtin.template:
         src: files/vault_template
         dest: "{{ target_dir }}/template_single"
 
     - name: template vault loop
       vars:
-        journal_path: journal.txt
+        journal_path: "{{ journal_location }}"
       ansible.builtin.template:
         src: files/vault_template
         dest: "{{ item }}"

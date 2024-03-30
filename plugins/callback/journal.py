@@ -62,7 +62,7 @@ class CallbackModule(CallbackBase):
     def v2_runner_on_ok(self, result: TaskResult):
         super().v2_runner_on_ok(result)
         task: Task = result._task
-        # host: Host = result._host
+        host: Host = result._host
         task_result: dict = result._result
 
         if "results" in task_result:  # loops get handled by v2_runner_item_*
@@ -70,7 +70,14 @@ class CallbackModule(CallbackBase):
 
         path = task.get_vars().get("journal_path")
         if path is not None:
-            self._write_result(path, task, task_result)
+            templar = Templar(
+                loader=self.playbook.get_loader(),
+                variables=self._all_vars(host=host, task=task)
+            )
+            expanded_path = templar.template(path)
+
+            if expanded_path is not None:
+                self._write_result(expanded_path, task, task_result)
 
     def v2_playbook_on_start(self, playbook: Playbook):
         self.playbook = playbook
@@ -84,13 +91,13 @@ class CallbackModule(CallbackBase):
         host: Host = result._host
         task_result: dict = result._result
 
-        templar = Templar(
-            loader=self.playbook.get_loader(),
-            variables=self._all_vars(host=host, task=task)
-        )
-        path = templar.template(task.get_vars().get("journal_path"))
-        if path != task.get_vars().get("journal_path"):
-            print("WTF\n\n\n\n", result)
-
+        path = task.get_vars().get("journal_path")
         if path is not None:
-            self._write_result(path, task, task_result)
+            templar = Templar(
+                loader=self.playbook.get_loader(),
+                variables=self._all_vars(host=host, task=task)
+            )
+            expanded_path = templar.template(path)
+
+            if expanded_path is not None:
+                self._write_result(expanded_path, task, task_result)
